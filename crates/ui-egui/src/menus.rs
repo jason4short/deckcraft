@@ -71,6 +71,41 @@ pub fn ui_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
     true
 }
 
+/// Mac-style object shortcuts, as in Keynote and canvas editors, beside PowerPoint's (⌥⌘G, ⇧⌘],
+/// ⌘D… stay bound by the commands themselves): ⌘G groups, ⇧⌘G ungroups, ⌥⌘] / ⌥⌘[ bring to
+/// front / send to back, ⇧⌘L locks or unlocks, ⇧⌘H hides or shows, ⇧⌘Z redoes. True when consumed.
+pub fn mac_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
+    use egui::Key::*;
+    if !m.cmd {
+        return false;
+    }
+    if (key, m.shift, m.alt) == (Z, true, false) {
+        let _ = app.run("edit.redo", json!({}));
+        return true;
+    }
+    let Some(st) = app.session.active() else { return false };
+    if st.selection.text.is_some() || st.selection.shapes.is_empty() {
+        return false;
+    }
+    let shapes = st.selected_shapes();
+    // Lock and hide act on the whole selection: any unlocked (shown) one makes them all locked (hidden).
+    let any_unlocked = shapes.iter().any(|s| !s.locked);
+    let any_shown = shapes.iter().any(|s| !s.hidden);
+    let (id, p) = match (key, m.shift, m.alt) {
+        (G, false, false) => ("arrange.group", json!({})),
+        (G, true, false) => ("arrange.ungroup", json!({})),
+        (CloseBracket | CloseCurlyBracket, false, true) => ("arrange.bringToFront", json!({})),
+        (OpenBracket | OpenCurlyBracket, false, true) => ("arrange.sendToBack", json!({})),
+        (L, true, false) => ("shape.lock", json!({"locked": any_unlocked})),
+        (H, true, false) => ("shape.visible", json!({"visible": !any_shown})),
+        _ => return false,
+    };
+    if let Err(e) = app.run(id, p) {
+        app.set_status(e);
+    }
+    true
+}
+
 /// ⇧⌘P: search every command by name and run it.
 pub fn palette(app: &mut SlideApp, ctx: &egui::Context) {
     let Some((mut query, mut sel)) = app.palette.take() else { return };

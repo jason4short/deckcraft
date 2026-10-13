@@ -1010,10 +1010,22 @@ impl SlideApp {
                         ctx.copy_text(t.to_string());
                     }
                 }
-                egui::Event::Paste(text) => self.paste(&text),
+                // ⇧⌘V (and ⌥⇧⌘V, the Mac's Paste and Match Style) pastes the text alone.
+                egui::Event::Paste(text) => {
+                    if ctx.input(|i| i.modifiers.shift) {
+                        if let Err(e) = self.session.execute("edit.pasteText", &json!({"text": text})) {
+                            self.set_status(e.to_string());
+                        }
+                    } else {
+                        self.paste(&text);
+                    }
+                }
                 egui::Event::Key { key, pressed: true, modifiers, .. } => {
                     let mods = Mods { shift: modifiers.shift, alt: modifiers.alt, cmd: modifiers.command || modifiers.ctrl };
                     if self.ui.shell == Shell::Canvas && canvas_shell::tool_key(self, key, mods) {
+                        continue;
+                    }
+                    if menus::mac_shortcut(self, key, mods) {
                         continue;
                     }
                     if !self.session.tool.drawing_freeform() && menus::ui_shortcut(self, key, mods) {
@@ -1268,6 +1280,9 @@ mod ime_tests;
 
 #[cfg(test)]
 mod paste_tests;
+
+#[cfg(test)]
+mod shortcut_tests;
 
 #[cfg(test)]
 mod tests {

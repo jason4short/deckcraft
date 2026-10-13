@@ -150,3 +150,40 @@ fn model_helpers() {
     let sc = deckcraft_model::Theme::default().colors;
     assert_eq!(opacity_of(&sh, &sc), 1.0);
 }
+
+fn three_selected(h: &mut Harness<'static, SlideApp>) -> Vec<u32> {
+    let app = h.state_mut();
+    let ids: Vec<u32> = [[100, 100, 100, 50], [260, 140, 80, 50], [400, 120, 120, 60]]
+        .iter()
+        .map(|r| app.session.execute("shape.insert", &json!({"preset": "rect", "rect": r})).unwrap()["id"].as_u64().unwrap() as u32)
+        .collect();
+    app.session.execute("selection.select", &json!({"ids": ids})).unwrap();
+    h.run_steps(3);
+    ids
+}
+
+#[test]
+fn several_layers_show_a_count_alignment_and_spacing() {
+    let mut h = harness();
+    let ids = three_selected(&mut h);
+    for label in ["3 selected", "Align left", "Distribute", "Spacing", "Group (⌘G)", "Merge shapes"] {
+        assert!(h.query_by_label(label).is_some(), "`{label}` is shown");
+    }
+    click(&mut h, "Align top");
+    let ys: Vec<f64> = ids.iter().map(|id| shape(h.state(), *id).xfrm.unwrap().y).collect();
+    assert!(ys.iter().all(|y| (y - 100.0).abs() < 1e-6), "aligned to the top one: {ys:?}");
+    click(&mut h, "Group (⌘G)");
+    let d = h.state().session.active().unwrap();
+    assert!(d.selected_shapes().iter().any(|s| matches!(s.kind, ShapeKind::Group { .. })), "grouped");
+}
+
+#[test]
+fn spacing_is_the_gap_between_neighbours_and_sets_them_equal() {
+    let b = |id: u32, x: f64, w: f64| (ShapeId(id), deckcraft_model::Xfrm { x, y: 0.0, w, h: 10.0, ..Default::default() });
+    // Out of order on purpose: neighbours go left to right.
+    let boxes = [b(1, 300.0, 50.0), b(2, 0.0, 100.0), b(3, 130.0, 70.0)];
+    assert_eq!(gaps(&boxes, true), vec![30.0, 100.0]);
+    assert_eq!(common(gaps(&boxes, true)), None, "unequal gaps are Mixed");
+    assert_eq!(spaced(&boxes, true, 20.0), vec![(ShapeId(3), 120.0), (ShapeId(1), 210.0)]);
+    assert_eq!(common([20.0, 20.2]), Some(20.0));
+}

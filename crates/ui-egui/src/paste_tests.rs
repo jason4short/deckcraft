@@ -74,3 +74,32 @@ fn a_paste_event_or_a_typed_v_doesnt_paste_again() {
     v(&mut h, false, egui::Modifiers::NONE);
     assert_eq!(pictures(&h), 0, "plain V is never a paste");
 }
+
+/// Bold "Hello" copied from one text box, then the caret at the end of another; the pasted runs'
+/// bold flags after a Paste event with `mods` held.
+fn paste_bold_hello(mods: egui::Modifiers) -> Vec<Option<bool>> {
+    let mut h = harness(Services::default());
+    let app = h.state_mut();
+    let a = app.run("insert.textBox", json!({"rect": [50, 50, 300, 40], "text": "Hello"})).unwrap()["id"].clone();
+    app.run("text.edit", json!({"id": a})).unwrap();
+    app.run("text.select", json!({"anchor": [0, 0], "caret": [0, 5]})).unwrap();
+    app.run("format.bold", json!({"on": true})).unwrap();
+    app.session.execute("edit.copy", &json!({})).unwrap();
+    let b = app.run("insert.textBox", json!({"rect": [50, 150, 300, 40], "text": "x"})).unwrap()["id"].clone();
+    app.run("text.edit", json!({"id": b, "end": true})).unwrap();
+    h.event(egui::Event::ModifiersChanged(mods));
+    h.event(egui::Event::Paste("Hello".into()));
+    h.run_steps(2);
+    let d = h.state().session.active().unwrap();
+    let id = serde_json::from_value(b).unwrap();
+    let body = d.shape(id).unwrap().text.clone().unwrap();
+    assert_eq!(body.text(), "xHello");
+    body.paragraphs[0].runs.iter().filter(|r| r.text.contains('H')).map(|r| r.props.bold).collect()
+}
+
+#[test]
+fn shift_command_v_pastes_text_without_its_formatting() {
+    assert_eq!(paste_bold_hello(egui::Modifiers::COMMAND), vec![Some(true)], "⌘V keeps the bold");
+    let plain = paste_bold_hello(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT);
+    assert!(plain.iter().all(|b| *b != Some(true)), "⇧⌘V drops it: {plain:?}");
+}
