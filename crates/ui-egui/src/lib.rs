@@ -108,6 +108,40 @@ impl Shell {
     }
 }
 
+/// egui-winit turns ⌘V into a Paste event only when the clipboard holds text; otherwise (an image,
+/// or shapes copied here, which leave empty text) the press is dropped and only the V key's release
+/// arrives. A release with ⌘ held, whose press wasn't seen and with no Paste in between, is that ⌘V
+/// (as in PhotoCraft). A V whose press an input method took isn't one: ⌘ isn't held.
+#[derive(Default)]
+struct PasteKey {
+    v_down: bool,
+    pasted: bool,
+}
+
+impl PasteKey {
+    fn textless_paste(&mut self, events: &[egui::Event]) -> bool {
+        let mut hit = false;
+        for e in events {
+            match e {
+                egui::Event::Paste(_) => self.pasted = true,
+                egui::Event::Key { key: egui::Key::V, pressed, modifiers, .. } => {
+                    if *pressed {
+                        self.v_down = true;
+                    } else {
+                        // The release ends the press either way, so a stale mark can't swallow
+                        // the next paste.
+                        hit = modifiers.command && !self.v_down && !self.pasted;
+                        self.v_down = false;
+                        self.pasted = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+        hit
+    }
+}
+
 /// Persisted UI state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -254,6 +288,8 @@ pub struct SlideApp {
     styled: bool,
     restyle: bool,
     fonts_ready: bool,
+    /// Tracking for a ⌘V that egui never reports (see `textless_paste`).
+    paste_key: PasteKey,
     last_time: f64,
     /// When AutoRecover data was last written (seconds, egui time).
     pub last_recovery: f64,
@@ -299,6 +335,7 @@ impl SlideApp {
             styled: false,
             restyle: true,
             fonts_ready: false,
+            paste_key: PasteKey::default(),
             last_time: 0.0,
             last_recovery: 0.0,
             quit_confirmed: false,
@@ -918,10 +955,12 @@ impl SlideApp {
 
     /// Keyboard and clipboard for the slide (when no text field has focus).
     fn keyboard(&mut self, ctx: &egui::Context) {
+        let events = ctx.input(|i| i.events.clone());
+        // Tracked before the early returns so a paste into a text field isn't repeated later.
+        let textless_paste = self.paste_key.textless_paste(&events);
         if ctx.memory(|m| m.focused().is_some()) || self.dialog.as_ref().is_some_and(|d| d.modal()) || self.palette.is_some() {
             return;
         }
-        let events = ctx.input(|i| i.events.clone());
         if self.backstage.is_some() {
             // The File tab: its own keys (Esc goes back, arrows walk the side menu) and app
             // shortcuts (New, Open, Command Palette…); typing, pasting or deleting would edit the
@@ -971,19 +1010,7 @@ impl SlideApp {
                         ctx.copy_text(t.to_string());
                     }
                 }
-                egui::Event::Paste(text) => {
-                    // An image on the clipboard (screenshots, copied pictures) becomes a picture.
-                    let img = if text.is_empty() { self.services.clipboard_image.as_mut().and_then(|f| f()) } else { None };
-                    let r = match img {
-                        Some(png) => self
-                            .session
-                            .execute("insert.picture", &json!({"name": "Pasted image.png", "data": deckcraft_engine::cmd::base64_encode(&png)})),
-                        None => self.session.execute("edit.paste", &json!({"text": text})),
-                    };
-                    if let Err(e) = r {
-                        self.set_status(e.to_string());
-                    }
-                }
+                egui::Event::Paste(text) => self.paste(&text),
                 egui::Event::Key { key, pressed: true, modifiers, .. } => {
                     let mods = Mods { shift: modifiers.shift, alt: modifiers.alt, cmd: modifiers.command || modifiers.ctrl };
                     if self.ui.shell == Shell::Canvas && canvas_shell::tool_key(self, key, mods) {
@@ -1001,7 +1028,26 @@ impl SlideApp {
                 _ => {}
             }
         }
+        if textless_paste {
+            self.paste("");
+        }
         self.drain_requests();
+    }
+
+    /// Paste from the system clipboard: its text, else an image on it (screenshots, copied
+    /// pictures) as a picture, else what was copied in DeckCraft (shapes, slides).
+    fn paste(&mut self, text: &str) {
+        let img = if text.is_empty() { self.services.clipboard_image.as_mut().and_then(|f| f()) } else { None };
+        let r = match img {
+            Some(png) => {
+                self.session.execute("insert.picture", &json!({"name": "Pasted image.png", "data": deckcraft_engine::cmd::base64_encode(&png)}))
+            }
+            None if text.is_empty() => self.session.execute("edit.paste", &json!({})),
+            None => self.session.execute("edit.paste", &json!({"text": text})),
+        };
+        if let Err(e) = r {
+            self.set_status(e.to_string());
+        }
     }
 
     /// Lay out the whole window.
@@ -1219,6 +1265,9 @@ fn js_now() -> f64 {
 
 #[cfg(test)]
 mod ime_tests;
+
+#[cfg(test)]
+mod paste_tests;
 
 #[cfg(test)]
 mod tests {

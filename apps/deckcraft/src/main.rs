@@ -120,6 +120,11 @@ fn services() -> Services {
         write: Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string()))),
         clipboard_image: Some(Box::new(|| {
             let mut cb = arboard::Clipboard::new().ok()?;
+            // Copied files first: Finder also puts the file's icon on the clipboard as an image,
+            // which would otherwise paste instead of the picture.
+            if let Some(bytes) = cb.get().file_list().ok().and_then(|paths| picture_from_files(&paths)) {
+                return Some(bytes);
+            }
             let img = cb.get_image().ok()?;
             let rgba = image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.into_owned())?;
             let mut out = Vec::new();
@@ -132,6 +137,24 @@ fn services() -> Services {
             .then(|| Box::new(audio::CpalOut::default()) as Box<dyn deckcraft_media::AudioOut>),
         ..Default::default()
     }
+}
+
+/// The bytes of the first copied file that is a picture (read whole only after its header is
+/// recognised, and up to 256 MB).
+fn picture_from_files(paths: &[std::path::PathBuf]) -> Option<Vec<u8>> {
+    use std::io::Read;
+    const MAX: u64 = 256 << 20;
+    paths.iter().find_map(|path| {
+        let mut head = Vec::with_capacity(16);
+        std::fs::File::open(path).ok()?.take(16).read_to_end(&mut head).ok()?;
+        let name = path.to_string_lossy();
+        if !deckcraft_engine::cmd::insert::content_type(&name, &head).starts_with("image/") {
+            return None;
+        }
+        let mut bytes = Vec::new();
+        std::fs::File::open(path).ok()?.take(MAX).read_to_end(&mut bytes).ok()?;
+        Some(bytes)
+    })
 }
 
 const APP_ID: &str = "ai.storyteller.deckcraft";
