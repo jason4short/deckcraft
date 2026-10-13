@@ -188,3 +188,30 @@ fn locked_layers_are_selected_from_the_layers_list_not_the_canvas() {
         assert_eq!(app.session.active().unwrap().selection.shapes.len(), 1);
     }
 }
+
+#[test]
+fn the_canvas_layout_shows_pixels_and_the_ribbon_points() {
+    let mut app = SlideApp::new(Session::with_new(), Services::default());
+    assert_eq!(crate::units::small(&app), crate::units::PT);
+    assert_eq!(crate::units::length(&app), crate::units::INCH);
+    app.run("view.shell", json!({"shell": "canvas"})).unwrap();
+    assert_eq!(crate::units::small(&app), crate::units::PX);
+    assert_eq!(crate::units::length(&app), crate::units::PX);
+    // Zoom: 100% is one slide pixel per screen point, so a fitted slide at scale 0.9 shows 45%.
+    assert_eq!(crate::units::zoom_shown(&app, 0.9), 0.45);
+    assert_eq!(crate::units::zoom_percent(&app, 50.0), 100.0);
+}
+
+#[test]
+fn the_inspector_shows_a_title_size_in_pixels() {
+    let mut h = harness(Shell::Canvas);
+    let app = h.state_mut();
+    let title = app.session.active().unwrap().current_slide().unwrap().shapes[0].id.0;
+    app.session.execute("text.set", &json!({"id": title, "text": "Pixel Grid"})).unwrap();
+    app.session.execute("selection.select", &json!({"ids": [title]})).unwrap();
+    app.ui.zoom = Some(0.9);
+    h.run_steps(4);
+    // The title slide's title is 60 pt: 120 px.
+    assert!(h.query_all_by_value("120 px").next().is_some(), "the size field reads 120 px");
+    assert!(h.query_by_label("45%").is_some(), "the zoom reads 45%");
+}

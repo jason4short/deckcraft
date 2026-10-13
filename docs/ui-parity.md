@@ -202,3 +202,11 @@ restyles, text changes, fades in, fades out). A deck of states is an ordinary PP
 and Microsoft 365 play it the same way, older versions show a fade. Limits: PPTX gives Morph no
 easing setting, so there is none here; a layer hidden with the eye isn't animated (the tab says so
 and suggests deleting it in that state, which fades it).
+
+Units (`crates/ui-egui/src/units.rs`): the canvas layout shows pixels at 2 px per point, Figma
+Slides' scale (a 16:9 slide is 1920 × 1080 px, a 44 pt title 88 px): type sizes, the text style
+editor, sizes and positions, line widths, margins, glow and soft edges, and the ruler. Zoom follows
+Figma's meaning (100% is one slide pixel per screen point, so a fitted slide reads about 40–50%).
+The ribbon keeps PowerPoint's points and inches. Commands and files are unchanged: commands take
+points, and PPTX stores EMU, 6,350 to a pixel exactly. Dialogs opened from the command palette
+(Slide Size, Paragraph) still show points and inches.

@@ -16,7 +16,8 @@ use crate::{SlideApp, ViewMode};
 const SIDEBAR_W: f32 = 260.0;
 const INSPECTOR_W: f32 = 280.0;
 const TOOLBAR_H: f32 = 64.0;
-const ZOOMS: [u32; 7] = [25, 50, 75, 100, 150, 200, 400];
+/// Zoom menu, in the canvas layout's pixel percentages (200% is the canvas's 4× limit).
+const ZOOMS: [u32; 7] = [10, 25, 50, 75, 100, 150, 200];
 
 pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
@@ -299,7 +300,7 @@ fn inspector_tabs(app: &mut SlideApp, ui: &mut Ui) {
             }
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let pct = (app.ui.zoom.unwrap_or(app.canvas_scale) * 100.0).round();
+            let pct = (crate::units::zoom_shown(app, app.ui.zoom.unwrap_or(app.canvas_scale)) * 100.0).round();
             let label = format!("{pct}%");
             let r = ui.add(egui::Button::new(egui::RichText::new(label).font(theme::font(13.0))).frame(false));
             egui::Popup::menu(&r).show(|ui| {
@@ -315,7 +316,8 @@ fn inspector_tabs(app: &mut SlideApp, ui: &mut Ui) {
                 ui.separator();
                 for z in ZOOMS {
                     if ui.button(format!("{z}%")).clicked() {
-                        let _ = app.run("view.zoom", json!({"percent": z}));
+                        let p = crate::units::zoom_percent(app, z as f64);
+                        let _ = app.run("view.zoom", json!({"percent": p}));
                     }
                 }
             });

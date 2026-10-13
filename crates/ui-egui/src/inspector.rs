@@ -233,9 +233,10 @@ fn text(app: &mut SlideApp, ui: &mut Ui) {
         });
         ui.vertical(|ui| {
             caption(ui, "Size");
+            let u = crate::units::small(app);
             let size = st.get("size").and_then(Value::as_f64).unwrap_or(18.0);
-            if let Some(v) = widgets::spinner(ui, "insp-size", size, 1.0, " pt", half - 14.0) {
-                run(app, "format.size", json!({"size": v.clamp(1.0, 4000.0)}));
+            if let Some(v) = widgets::spinner(ui, "insp-size", u.show(size), 1.0, u.suffix, half - 14.0) {
+                run(app, "format.size", json!({"size": u.to_pt(v).clamp(1.0, 4000.0)}));
             }
         });
     });
@@ -556,7 +557,8 @@ fn text_styles(app: &mut SlideApp, ui: &mut Ui) {
         }
         let font = if s.bold() { theme::bold(size) } else { theme::font(size) };
         ui.painter().text(pos2(r.min.x + 8.0, r.min.y + 4.0), Align2::LEFT_TOP, s.name, font, t.text);
-        let detail = format!("{} · {} pt{}", s.family(&doc), widgets::fmt_num(s.size(), ""), if s.bold() { " · Bold" } else { "" });
+        let u = crate::units::small(app);
+        let detail = format!("{} · {}{}{}", s.family(&doc), widgets::fmt_num(u.show(s.size()), ""), u.suffix, if s.bold() { " · Bold" } else { "" });
         ui.painter().text(pos2(r.min.x + 8.0, r.max.y - 4.0), Align2::LEFT_BOTTOM, detail, theme::font(11.0), t.text_dim);
         widgets::chevron(ui.painter(), pos2(r.max.x - 12.0, r.center().y), 3.0, t.text_faint);
         let label = format!("Edit text style {}", s.name);
@@ -633,8 +635,9 @@ fn style_editor(app: &mut SlideApp, ui: &mut Ui, doc: &deckcraft_model::Presenta
         });
         ui.vertical(|ui| {
             caption(ui, "Size");
-            if let Some(v) = widgets::spinner(ui, "style-size", s.size(), 1.0, " pt", half - 14.0) {
-                edits.push(Edit::Size(v.clamp(1.0, 4000.0)));
+            let u = crate::units::small(app);
+            if let Some(v) = widgets::spinner(ui, "style-size", u.show(s.size()), 1.0, u.suffix, half - 14.0) {
+                edits.push(Edit::Size(u.to_pt(v).clamp(1.0, 4000.0)));
             }
         });
     });

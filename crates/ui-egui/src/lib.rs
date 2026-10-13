@@ -30,6 +30,7 @@ pub mod theme;
 pub mod thumbs;
 pub mod toast;
 pub mod uifonts;
+pub mod units;
 pub mod widgets;
 
 use std::sync::mpsc::{Receiver, Sender};
