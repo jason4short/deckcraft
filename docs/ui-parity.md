@@ -162,10 +162,10 @@ control channel's `ui.set {shell}`, or `deckcraft --shell canvas` (`DECKCRAFT_SH
 stays the default. Both layouts drive the same commands, so files, undo and PPTX output don't change
 with the layout (`crates/ui-egui/src/canvas_shell.rs`).
 
-| Part | Landed (phases 1–3) | Later |
+| Part | Landed (phases 1–4) | Later |
 |---|---|---|
 | Left sidebar | Name and folder (menu: Info, Save As, Export, Print, Close), slide / grid switch, New slide with layouts, +, slide list with sections, Layers (the Selection pane's list: rename, restack, eye, lock) | |
-| Inspector | Present from this slide, Export, Design / Animate, zoom menu. Design (`crates/ui-egui/src/inspector.rs`): Align and Distribute; Text (font, weight, size, line height, letter spacing, bold / italic / underline / strike, alignment, bullets, numbering, vertical anchor, colour); Link (URL or slide number); Fill (solid, gradient with the gradient editor, picture, none); Opacity; More options (the full Format Shape pane). With nothing selected: Layout and Background. Animate shows the Animation pane | Named text styles (phase 4); Animate tab with transitions (phase 5) |
+| Inspector | Present from this slide, Export, Design / Animate, zoom menu. Design (`crates/ui-egui/src/inspector.rs`): Align and Distribute; Text (text style, font, weight, size, line height, letter spacing, bold / italic / underline / strike, alignment, bullets, numbering, vertical anchor, colour); Link (URL or slide number); Fill (solid, gradient with the gradient editor, picture, none); Opacity; More options (the full Format Shape pane). With nothing selected: Layout and Background. Animate shows the Animation pane | Animate tab with transitions (phase 5); editing a style itself (it would change the master) |
 | Under the slide | Presenter notes card with a grip; floating toolbar: Select, Text box, Picture, Shape, Table, Chart, Comment, notes toggle, command search. Single-key tools: V select, T text box, R rectangle, O oval, L line, Esc back to Select (not while editing text). Letters don't type over a selected shape here: Enter edits its text | Pen and comment tools on the canvas |
 | Slide list | Keeps the current slide in view when it changes (both layouts) | |
 
@@ -175,3 +175,13 @@ such as Inter offers Regular and Bold, not its in-between instances. Opacity is 
 transparency (`shape.fill {transparency}`) or the picture's (`picture.adjust {transparency}`);
 outlines and text keep their own colour's transparency. Letter spacing offers presets because
 `format.state` doesn't report the current value.
+
+Text styles (`crates/ui-egui/src/textstyles.rs`) are the deck's own: Title (the master's title
+style), Body, Body 2 and Body 3 (its body style's first three levels) and Plain text (its other
+style), each over the presentation's default text style. Applying one sets the selected text's font
+(theme references such as `+mj-lt` stay references), size, bold, italic, colour and line spacing
+with the formatting commands, as one undo step ("Text Style: Body"), so the PPTX holds ordinary run
+formatting. The menu names the style the selection matches (same font, size and weight, or the only
+style in its theme font: a title a layout enlarges is still a Title), else "Custom". Known gap
+(engine, both layouts): formatting an empty placeholder doesn't stick, since the engine formats runs
+and an empty placeholder has none.

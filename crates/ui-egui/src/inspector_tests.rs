@@ -114,3 +114,22 @@ fn weights_are_names_pptx_can_store() {
     assert_eq!(weight_commands("Inter", "SemiBold")[0].1["family"], "Inter SemiBold");
     assert_eq!(weight_commands("Inter", "Bold")[1].1["on"], true);
 }
+
+#[test]
+fn the_text_style_menu_names_the_style_and_applies_another() {
+    let mut h = harness();
+    let app = h.state_mut();
+    let title = app.session.active().unwrap().current_slide().unwrap().shapes[0].id.0;
+    // (An empty placeholder keeps its layout's formatting: the engine formats runs.)
+    app.session.execute("text.set", &json!({"id": title, "text": "Pixel Grid"})).unwrap();
+    app.session.execute("selection.select", &json!({"ids": [title]})).unwrap();
+    h.run_steps(3);
+    h.get_by_label("Text style: Title").click();
+    h.run_steps(3);
+    h.get_by_label("Body 3").click();
+    h.run_steps(3);
+    let st = h.state_mut().session.execute("format.state", &json!({})).unwrap();
+    assert_eq!(st["size"], 20.0);
+    assert_eq!(st["fontRef"], "+mn-lt");
+    assert!(h.query_by_label("Text style: Body 3").is_some());
+}

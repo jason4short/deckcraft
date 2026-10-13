@@ -23,6 +23,7 @@ pub mod selpane;
 pub mod show;
 pub mod sorter;
 pub mod status;
+pub mod textstyles;
 pub mod textures;
 pub mod theme;
 pub mod thumbs;

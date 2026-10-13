@@ -197,6 +197,8 @@ fn text(app: &mut SlideApp, ui: &mut Ui) {
     let st = fmt_state(app);
     let en = enabled(app, "format.bold");
     section(ui, "Text");
+    style_picker(app, ui, &st, en);
+    ui.add_space(6.0);
     let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
     let bold = st.get("bold").and_then(Value::as_bool).unwrap_or(false);
     let (base, styles, current) = weights(&font, bold);
@@ -310,6 +312,39 @@ fn text(app: &mut SlideApp, ui: &mut Ui) {
     if let Some(Some(c)) = color_field(app, ui, "Text color", Some(t_auto(ui)), None) {
         run(app, "format.color", json!({"color": cref_param(&c)}));
     }
+}
+
+/// The text style menu: the current style's name, large, and the deck's styles as previews.
+fn style_picker(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
+    let t = Tokens::get(ui.ctx());
+    let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
+    let styles = crate::textstyles::styles(&doc);
+    let current = crate::textstyles::matching(&styles, st).map(|s| s.name).unwrap_or("Custom");
+    let w = ui.available_width();
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 40.0), if en { Sense::click() } else { Sense::hover() });
+    ui.painter().rect(
+        r,
+        CornerRadius::same(6),
+        if resp.hovered() { t.hover } else { t.field_bg },
+        Stroke::new(1.0, t.border),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(pos2(r.min.x + 10.0, r.center().y), Align2::LEFT_CENTER, current, theme::bold(20.0), if en { t.text } else { t.text_faint });
+    widgets::chevron(ui.painter(), pos2(r.max.x - 14.0, r.center().y), 3.5, t.text_dim);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, format!("Text style: {current}")));
+    egui::Popup::menu(&resp).width(w.max(220.0)).show(|ui| {
+        for s in &styles {
+            // A preview at a readable size: the style's own weight, its size scaled down.
+            let size = (s.size() as f32 * 0.45).clamp(12.0, 26.0);
+            let font = if s.bold() { theme::bold(size) } else { theme::font(size) };
+            let label = egui::RichText::new(s.name).font(font);
+            if ui.add(egui::Button::selectable(s.name == current, label).min_size(vec2(w.max(220.0) - 12.0, 0.0))).clicked() {
+                let cmds = crate::textstyles::commands(s);
+                crate::textstyles::apply(app, &format!("Text Style: {}", s.name), cmds);
+                ui.close();
+            }
+        }
+    });
 }
 
 // ----- Link -------------------------------------------------------------------------------
