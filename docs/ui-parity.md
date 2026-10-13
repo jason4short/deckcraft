@@ -162,11 +162,12 @@ control channel's `ui.set {shell}`, or `deckcraft --shell canvas` (`DECKCRAFT_SH
 stays the default. Both layouts drive the same commands, so files, undo and PPTX output don't change
 with the layout (`crates/ui-egui/src/canvas_shell.rs`).
 
-| Part | Landed (phases 1–2) | Later |
+| Part | Landed (phases 1–3) | Later |
 |---|---|---|
 | Left sidebar | Name and folder (menu: Info, Save As, Export, Print, Close), slide / grid switch, New slide with layouts, +, slide list with sections, Layers (the Selection pane's list: rename, restack, eye, lock) | |
 | Inspector | Present from this slide, Export, Design / Animate, zoom menu. Design (`crates/ui-egui/src/inspector.rs`): Align and Distribute; Text (font, weight, size, line height, letter spacing, bold / italic / underline / strike, alignment, bullets, numbering, vertical anchor, colour); Link (URL or slide number); Fill (solid, gradient with the gradient editor, picture, none); Opacity; More options (the full Format Shape pane). With nothing selected: Layout and Background. Animate shows the Animation pane | Named text styles (phase 4); Animate tab with transitions (phase 5) |
-| Under the slide | Presenter notes card with a grip; floating toolbar: Select, Text box, Picture, Shape, Table, Chart, Comment, notes toggle, command search | Phase 3: more tools, keyboard tool shortcuts |
+| Under the slide | Presenter notes card with a grip; floating toolbar: Select, Text box, Picture, Shape, Table, Chart, Comment, notes toggle, command search. Single-key tools: V select, T text box, R rectangle, O oval, L line, Esc back to Select (not while editing text). Letters don't type over a selected shape here: Enter edits its text | Pen and comment tools on the canvas |
+| Slide list | Keeps the current slide in view when it changes (both layouts) | |
 
 PPTX-safe choices in the inspector: a weight is offered only when PPTX can name it, as Regular or
 Bold (the bold flag) or as a family name of its own ("Avenir Next Demi Bold"), so a variable font

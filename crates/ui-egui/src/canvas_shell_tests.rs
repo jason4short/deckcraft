@@ -48,7 +48,7 @@ fn the_layout_choice_is_kept_with_the_ui_state() {
 fn the_canvas_shell_replaces_the_ribbon_with_sidebar_inspector_and_toolbar() {
     let h = harness(Shell::Canvas);
     assert!(h.query_by_label("File").is_none(), "no ribbon tabs");
-    for label in ["Layers", "Design", "Animate", "Export", "Select (Esc)", "Text box"] {
+    for label in ["Layers", "Design", "Animate", "Export", "Select (V)", "Text box (T)"] {
         assert!(h.query_by_label(label).is_some(), "`{label}` is shown");
     }
     assert!(h.state().slide_rect.is_some(), "the slide is on the canvas");
@@ -86,10 +86,10 @@ fn inspector_tabs_switch_between_design_and_animate() {
 #[test]
 fn toolbar_picks_the_drawing_tool() {
     let mut h = harness(Shell::Canvas);
-    h.get_by_label("Text box").click();
+    h.get_by_label("Text box (T)").click();
     h.run_steps(2);
     assert_eq!(h.state().session.tool.kind, ToolKind::TextBox);
-    h.get_by_label("Select (Esc)").click();
+    h.get_by_label("Select (V)").click();
     h.run_steps(2);
     assert_eq!(h.state().session.tool.kind, ToolKind::Select);
 }
@@ -103,4 +103,60 @@ fn the_canvas_shell_draws_in_dark_mode_and_with_nothing_open() {
     h.state_mut().run("app.closePresentation", json!({})).unwrap();
     h.run_steps(3);
     assert!(h.state().session.active().is_none());
+}
+
+fn press(h: &mut Harness<'static, SlideApp>, key: egui::Key, text: &str) {
+    h.key_press(key);
+    if !text.is_empty() {
+        h.event(egui::Event::Text(text.into()));
+    }
+    h.run_steps(2);
+}
+
+#[test]
+fn single_keys_pick_tools_in_the_canvas_shell() {
+    let mut h = harness(Shell::Canvas);
+    press(&mut h, egui::Key::T, "t");
+    assert_eq!(h.state().session.tool.kind, ToolKind::TextBox);
+    press(&mut h, egui::Key::R, "r");
+    assert_eq!(h.state().session.tool.kind, ToolKind::Shape { preset: "rect".into() });
+    press(&mut h, egui::Key::O, "o");
+    assert_eq!(h.state().session.tool.kind, ToolKind::Shape { preset: "ellipse".into() });
+    press(&mut h, egui::Key::Escape, "");
+    assert_eq!(h.state().session.tool.kind, ToolKind::Select);
+}
+
+#[test]
+fn letters_pick_tools_instead_of_typing_over_a_selected_shape() {
+    let mut h = harness(Shell::Canvas);
+    let app = h.state_mut();
+    let id = app.session.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 200, 100], "text": "Keep"})).unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    app.session.execute("selection.select", &json!({"ids": [id]})).unwrap();
+    h.run_steps(2);
+    press(&mut h, egui::Key::T, "t");
+    assert_eq!(h.state().session.tool.kind, ToolKind::TextBox);
+    let text = h.state_mut().session.execute("text.get", &json!({"id": id})).unwrap();
+    assert_eq!(text["text"], "Keep", "the shape's text is untouched");
+}
+
+#[test]
+fn letters_type_while_editing_text_and_in_the_ribbon() {
+    let mut h = harness(Shell::Canvas);
+    let app = h.state_mut();
+    let id =
+        app.session.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 200, 100], "text": "A"})).unwrap()["id"].as_u64().unwrap();
+    app.session.execute("selection.select", &json!({"ids": [id]})).unwrap();
+    app.session.key("Enter", deckcraft_engine::Mods::default()).unwrap();
+    app.session.execute("text.move", &json!({"to": "end"})).unwrap();
+    h.run_steps(2);
+    press(&mut h, egui::Key::T, "t");
+    assert_eq!(h.state().session.tool.kind, ToolKind::Select, "no tool while editing");
+    let text = h.state_mut().session.execute("text.get", &json!({"id": id})).unwrap();
+    assert_eq!(text["text"], "At");
+
+    let mut h = harness(Shell::Classic);
+    press(&mut h, egui::Key::T, "t");
+    assert_eq!(h.state().session.tool.kind, ToolKind::Select, "the ribbon has no single-key tools");
 }

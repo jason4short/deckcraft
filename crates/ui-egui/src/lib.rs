@@ -917,7 +917,10 @@ impl SlideApp {
         for e in events {
             match e {
                 egui::Event::Text(t) => {
-                    if self.session.active().is_some_and(|d| d.selection.text.is_some() || d.selection.shapes.len() == 1)
+                    // In the canvas shell letters pick tools unless text is being edited (Enter
+                    // edits a selected shape's text); the ribbon types over a selected shape.
+                    let types_over = self.ui.shell == Shell::Classic;
+                    if self.session.active().is_some_and(|d| d.selection.text.is_some() || (types_over && d.selection.shapes.len() == 1))
                         && let Err(e) = self.session.type_text(&t)
                     {
                         self.set_status(e.to_string());
@@ -953,6 +956,9 @@ impl SlideApp {
                 }
                 egui::Event::Key { key, pressed: true, modifiers, .. } => {
                     let mods = Mods { shift: modifiers.shift, alt: modifiers.alt, cmd: modifiers.command || modifiers.ctrl };
+                    if self.ui.shell == Shell::Canvas && canvas_shell::tool_key(self, key, mods) {
+                        continue;
+                    }
                     if !self.session.tool.drawing_freeform() && menus::ui_shortcut(self, key, mods) {
                         continue;
                     }

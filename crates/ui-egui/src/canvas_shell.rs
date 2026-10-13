@@ -4,7 +4,7 @@
 //! floating toolbar. It reuses the classic shell's pieces and, like them, acts only through
 //! commands, so both layouts edit, save and open exactly the same presentations.
 
-use deckcraft_engine::{Target, ToolKind};
+use deckcraft_engine::{Mods, Target, ToolKind};
 use egui::{Align2, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::json;
 
@@ -37,6 +37,30 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             crate::canvas::show(app, ui);
         }
     });
+}
+
+/// Single-key tools, as in canvas editors: V select, T text box, R rectangle, O oval, L line, and
+/// Esc back to Select from a drawing tool. Not while text is being edited (the letters are
+/// typed) or a freeform is being drawn. Returns whether the key was used.
+pub fn tool_key(app: &mut SlideApp, key: egui::Key, mods: Mods) -> bool {
+    if mods.cmd || mods.alt || mods.shift || app.session.tool.drawing_freeform() {
+        return false;
+    }
+    if app.session.active().is_none_or(|d| d.selection.text.is_some()) {
+        return false;
+    }
+    let shape = |p: &str| ToolKind::Shape { preset: p.to_string() };
+    let kind = match key {
+        egui::Key::V => ToolKind::Select,
+        egui::Key::T => ToolKind::TextBox,
+        egui::Key::R => shape("rect"),
+        egui::Key::O => shape("ellipse"),
+        egui::Key::L => shape("line"),
+        egui::Key::Escape if app.session.tool.kind != ToolKind::Select => ToolKind::Select,
+        _ => return false,
+    };
+    app.session.set_tool(kind);
+    true
 }
 
 /// A panel edge: the sidebars are cards with a hairline against the canvas.
@@ -370,16 +394,16 @@ fn toolbar(app: &mut SlideApp, ui: &mut Ui) {
         let ui = &mut row;
         let kind = app.session.tool.kind.clone();
         let has_slide = app.session.active().is_some_and(|d| !d.doc.slides.is_empty() || d.selection.target != Target::Slides);
-        if tool(ui, Icon::LassoSelect, "Select (Esc)", kind == ToolKind::Select, true).clicked() {
+        if tool(ui, Icon::Pointer, "Select (V)", kind == ToolKind::Select, true).clicked() {
             app.session.set_tool(ToolKind::Select);
         }
-        if tool(ui, Icon::TextBox, "Text box", kind == ToolKind::TextBox, has_slide).clicked() {
+        if tool(ui, Icon::TextBox, "Text box (T)", kind == ToolKind::TextBox, has_slide).clicked() {
             app.session.set_tool(ToolKind::TextBox);
         }
         if tool(ui, Icon::Picture, "Picture…", false, has_slide).clicked() {
             let _ = app.run("app.insertPictureDialog", json!({}));
         }
-        let r = tool(ui, Icon::Shapes, "Shape", matches!(kind, ToolKind::Shape { .. }), has_slide);
+        let r = tool(ui, Icon::Shapes, "Shape (R rectangle, O oval, L line)", matches!(kind, ToolKind::Shape { .. }), has_slide);
         egui::Popup::menu(&r).show(|ui| {
             if let Some(p) = crate::ribbon::shapes_gallery(ui) {
                 app.session.set_tool(ToolKind::Shape { preset: p.to_string() });

@@ -45,6 +45,11 @@ pub(crate) fn list(app: &mut SlideApp, ui: &mut Ui) {
     let section_starts: Vec<(usize, usize)> =
         doc.sections.iter().enumerate().filter_map(|(si, s)| s.slides.first().and_then(|id| doc.slide_index(*id)).map(|i| (i, si))).collect();
     let mut need_more = false;
+    // When the current slide changes (arrow keys, the canvas, a command), bring it into view.
+    let seen_id = ui.id().with("thumbs_current");
+    let now = (app.session.active().map(|d| d.uid).unwrap_or(0), cur);
+    let scroll_to_current = ui.data_mut(|d| d.get_temp::<(u64, usize)>(seen_id)) != Some(now);
+    ui.data_mut(|d| d.insert_temp(seen_id, now));
     for i in 0..doc.slides.len() {
         if let Some((_, si)) = section_starts.iter().find(|(start, _)| *start == i)
             && let Some(sec) = doc.sections.get(*si)
@@ -88,6 +93,9 @@ pub(crate) fn list(app: &mut SlideApp, ui: &mut Ui) {
         let (row, resp) = ui.allocate_exact_size(vec2(width, th + 16.0), Sense::click_and_drag());
         let img = Rect::from_min_size(pos2(row.min.x + 30.0, row.min.y + 6.0), vec2(tw, th));
         rects.push((i, row));
+        if i == cur && scroll_to_current {
+            ui.scroll_to_rect(row, None);
+        }
         let p = ui.painter();
         let id = doc.slides.get(i).map(|s| s.id);
         let selected = i == cur || id.is_some_and(|id| multi.contains(&id));

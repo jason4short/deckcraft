@@ -477,7 +477,8 @@ fn slide(app: &mut SlideApp, ui: &mut Ui) {
     ui.add_space(4.0);
     caption(ui, "Layout");
     let w = ui.available_width();
-    let r = ui.add_sized(vec2(w, 26.0), egui::Button::new(layout.unwrap_or_else(|| "Layout".into())));
+    let r =
+        ui.add_sized(vec2(w, 26.0), egui::Button::new(layout.unwrap_or_else(|| "Layout".into())).fill(t.field_bg).stroke(Stroke::new(1.0, t.border)));
     egui::Popup::menu(&r).width(420.0).show(|ui| crate::ribbon::layout_menu(app, ui, "slide.layout"));
     section(ui, "Background");
     crate::panes::background(app, ui);
