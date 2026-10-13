@@ -211,7 +211,8 @@ fn layers(app: &mut SlideApp, ui: &mut Ui) {
                 if app.session.active().is_some_and(|d| d.shapes().is_empty()) {
                     ui.label(egui::RichText::new("Nothing on this slide yet").font(theme::font(12.0)).color(t.text_faint));
                 } else {
-                    crate::selpane::list(app, ui);
+                    let marked = crate::states::changed_layers(app);
+                    crate::selpane::list_marked(app, ui, &marked);
                 }
             });
         });
@@ -244,7 +245,7 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
                 // Slider tracks and fields stand out from the white card.
                 ui.visuals_mut().widgets.inactive.bg_fill = t.pressed;
                 match tab.as_str() {
-                    "animate" => crate::panes::animation(app, ui),
+                    "animate" => crate::states::animate(app, ui),
                     _ => crate::inspector::design(app, ui),
                 }
             });

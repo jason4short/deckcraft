@@ -91,23 +91,9 @@ pub fn matching<'a>(styles: &'a [TextStyle], state: &Value) -> Option<&'a TextSt
     }
 }
 
-/// Run `cmds` as one undo step labelled `label` (the formatting commands each make their own).
+/// Give the selected text `style`, as one undo step.
 pub fn apply(app: &mut SlideApp, label: &str, cmds: Vec<(&'static str, Value)>) {
-    let before = app.session.active().map(|d| d.history.undo.len()).unwrap_or(0);
-    for (id, p) in cmds {
-        if let Err(e) = app.run(id, p) {
-            app.set_status(e);
-        }
-    }
-    let Some(st) = app.session.active_mut() else { return };
-    let undo = &mut st.history.undo;
-    if undo.len() > before + 1 {
-        // Keep the first step (the document before the style), drop the ones after it.
-        undo.truncate(before + 1);
-        if let Some(e) = undo.last_mut() {
-            e.label = label.to_string();
-        }
-    }
+    app.run_as_one(label, cmds);
 }
 
 #[cfg(test)]

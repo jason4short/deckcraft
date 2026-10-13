@@ -45,7 +45,9 @@ pub struct Textures {
     drawn: Option<(usize, Rect)>,
     /// Canvas renders so far (tests, performance checks).
     pub canvas_renders: u64,
-    thumbs: HashMap<usize, Entry>,
+    /// Thumbnails by (slide address, width in pixels): the slide list and the canvas shell's
+    /// state strip show the same slide at two sizes at once.
+    thumbs: HashMap<(usize, u32), Entry>,
     clock: u64,
     pub last_render_ms: f64,
 }
@@ -186,7 +188,8 @@ impl Textures {
         };
         self.clock += 1;
         let clock = self.clock;
-        if let Some(e) = self.thumbs.get_mut(&key.slide)
+        let slot = (key.slide, width_px);
+        if let Some(e) = self.thumbs.get_mut(&slot)
             && e.key == key
         {
             e.stamp = clock;
@@ -194,17 +197,26 @@ impl Textures {
         }
         if *budget == 0 {
             // Keep showing the stale thumbnail while the new one waits.
-            return self.thumbs.get(&key.slide).map(|e| e.tex.clone());
+            return self.thumbs.get(&slot).or_else(|| self.thumbs.iter().find(|(k, _)| k.0 == key.slide).map(|(_, e)| e)).map(|e| e.tex.clone());
         }
         *budget -= 1;
         let scale = width_px as f64 / p.slide_size.width.max(1.0);
         let img = deckcraft_render::render_slide(p, index, &RenderOpts { scale, size: Some((width_px, h)), threads: 0, ..Default::default() });
         let tex = ctx.load_texture(format!("thumb-{index}"), to_color_image(&img, false), TextureOptions::LINEAR);
-        // Drop the old entry for this slide address; entries for slides that no longer exist age out.
+        // Keep two sizes of a slide at most (dragging the slide list wider makes a new one each
+        // step): drop the least recently used other size. Entries for slides that no longer
+        // exist age out.
+        let others: Vec<((usize, u32), u64)> =
+            self.thumbs.iter().filter(|(k, _)| k.0 == key.slide && **k != slot).map(|(k, e)| (*k, e.stamp)).collect();
+        if others.len() >= 2
+            && let Some((old, _)) = others.iter().min_by_key(|x| x.1)
+        {
+            self.thumbs.remove(old);
+        }
         let region = key.want;
-        self.thumbs.insert(key.slide, Entry { key, tex: tex.clone(), region, _slide: slide, _master: master, stamp: clock });
+        self.thumbs.insert(slot, Entry { key, tex: tex.clone(), region, _slide: slide, _master: master, stamp: clock });
         if self.thumbs.len() > 600 {
-            let mut v: Vec<(usize, u64)> = self.thumbs.iter().map(|(k, e)| (*k, e.stamp)).collect();
+            let mut v: Vec<((usize, u32), u64)> = self.thumbs.iter().map(|(k, e)| (*k, e.stamp)).collect();
             v.sort_by_key(|x| x.1);
             for (k, _) in v.into_iter().take(200) {
                 self.thumbs.remove(&k);

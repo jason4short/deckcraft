@@ -22,6 +22,7 @@ pub mod ribbon;
 pub mod selpane;
 pub mod show;
 pub mod sorter;
+pub mod states;
 pub mod status;
 pub mod textstyles;
 pub mod textures;
@@ -309,6 +310,25 @@ impl SlideApp {
     pub fn with_control(mut self, rx: Receiver<ControlRequest>) -> Self {
         self.control_rx = Some(rx);
         self
+    }
+
+    /// Run `cmds` as one undo step named `label` (each command would make its own).
+    pub fn run_as_one(&mut self, label: &str, cmds: Vec<(&str, Value)>) {
+        let before = self.session.active().map(|d| d.history.undo.len()).unwrap_or(0);
+        for (id, p) in cmds {
+            if let Err(e) = self.run(id, p) {
+                self.set_status(e);
+            }
+        }
+        let Some(st) = self.session.active_mut() else { return };
+        let undo = &mut st.history.undo;
+        if undo.len() > before + 1 {
+            // Keep the first step (the document before them all), drop the ones after it.
+            undo.truncate(before + 1);
+            if let Some(e) = undo.last_mut() {
+                e.label = label.to_string();
+            }
+        }
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {

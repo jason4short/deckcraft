@@ -162,12 +162,12 @@ control channel's `ui.set {shell}`, or `deckcraft --shell canvas` (`DECKCRAFT_SH
 stays the default. Both layouts drive the same commands, so files, undo and PPTX output don't change
 with the layout (`crates/ui-egui/src/canvas_shell.rs`).
 
-| Part | Landed (phases 1–4) | Later |
+| Part | Landed (phases 1–5) | Later |
 |---|---|---|
 | Left sidebar | Name and folder (menu: Info, Save As, Export, Print, Close), slide / grid switch, New slide with layouts, +, slide list with sections, Layers (the Selection pane's list: rename, restack, eye, lock) | |
-| Inspector | Present from this slide, Export, Design / Animate, zoom menu. Design (`crates/ui-egui/src/inspector.rs`): Align and Distribute; Text (text style, font, weight, size, line height, letter spacing, bold / italic / underline / strike, alignment, bullets, numbering, vertical anchor, colour); Link (URL or slide number); Fill (solid, gradient with the gradient editor, picture, none); Opacity; More options (the full Format Shape pane). With nothing selected: Layout and Background. Animate shows the Animation pane | Animate tab with transitions (phase 5); editing a style itself (it would change the master) |
+| Inspector | Present from this slide, Export, Design / Animate, zoom menu. Design (`crates/ui-egui/src/inspector.rs`): Align and Distribute; Text (text style, font, weight, size, line height, letter spacing, bold / italic / underline / strike, alignment, bullets, numbering, vertical anchor, colour); Link (URL or slide number); Fill (solid, gradient with the gradient editor, picture, none); Opacity; More options (the full Format Shape pane). With nothing selected: Layout and Background. Animate shows the slide's states (see below) and, folded, the Animation pane | Editing a text style itself (it would change the master) |
 | Under the slide | Presenter notes card with a grip; floating toolbar: Select, Text box, Picture, Shape, Table, Chart, Comment, notes toggle, command search. Single-key tools: V select, T text box, R rectangle, O oval, L line, Esc back to Select (not while editing text). Letters don't type over a selected shape here: Enter edits its text | Pen and comment tools on the canvas |
-| Slide list | Keeps the current slide in view when it changes (both layouts) | |
+| Slide list | Keeps the current slide in view when it changes (both layouts); the Layers list marks (accent dot) the layers that change from the previous state | |
 
 PPTX-safe choices in the inspector: a weight is offered only when PPTX can name it, as Regular or
 Bold (the bold flag) or as a family name of its own ("Avenir Next Demi Bold"), so a variable font
@@ -185,3 +185,16 @@ formatting. The menu names the style the selection matches (same font, size and 
 style in its theme font: a title a layout enlarges is still a Title), else "Custom". Known gap
 (engine, both layouts): formatting an empty placeholder doesn't stick, since the engine formats runs
 and an empty placeholder has none.
+
+States (`crates/ui-egui/src/states.rs`, the Animate tab) are slides joined by the Morph transition:
+consecutive slides whose later ones enter with Morph are the states of one animation, and Morph
+animates each layer it pairs between two states (by `!!name`, name, text, then shape:
+`deckcraft_anim::morph_pairs`) in position, size, rotation, colour and transparency, fading in or
+out the layers only one state has. The tab shows the run as a strip of numbered thumbnails (click to
+go), **Add state** (duplicate the slide and set Morph on the copy, one undo step), **Play** (present
+from the first state), Morph's duration and Objects / Words / Characters, **Stop being a state**
+(Morph off), and **What changes** from the previous state, layer by layer (moves, resizes, rotates,
+restyles, text changes, fades in, fades out). A deck of states is an ordinary PPTX: PowerPoint 2019
+and Microsoft 365 play it the same way, older versions show a fade. Limits: PPTX gives Morph no
+easing setting, so there is none here; a layer hidden with the eye isn't animated (the tab says so
+and suggests deleting it in that state, which fades it).

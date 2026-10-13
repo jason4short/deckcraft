@@ -130,8 +130,14 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     list(app, ui);
 }
 
-/// The rows alone, without the Show All / Hide All header (the canvas shell's Layers list).
+/// The rows alone, without the Show All / Hide All header.
 pub fn list(app: &mut SlideApp, ui: &mut Ui) {
+    list_marked(app, ui, &HashSet::new());
+}
+
+/// The rows, with an accent dot before the objects in `marked` (the canvas shell's Layers list
+/// marks the layers that change from the previous state).
+pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
     let rows = rows(st.shapes(), &app.selpane.collapsed);
@@ -207,6 +213,9 @@ pub fn list(app: &mut SlideApp, ui: &mut Ui) {
         } else {
             let color = if row.dimmed { t.text_faint } else { t.text };
             painter.text(pos2(name_x, r.center().y), Align2::LEFT_CENTER, &row.name, theme::font(12.5), color);
+            if marked.contains(&row.id) {
+                painter.circle_filled(pos2(name_x - 7.0, r.center().y), 2.5, t.accent);
+            }
         }
         // Eye and padlock.
         let ink = if row.dimmed { t.text_faint } else { t.text_dim };
