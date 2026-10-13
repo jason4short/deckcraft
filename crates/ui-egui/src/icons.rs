@@ -286,6 +286,12 @@ icons! {
     Lock => "lock",
     /// Open padlock (Selection pane: an object that isn't locked).
     Unlock => "unlock",
+    /// A broken link (detach text from its style).
+    Detach => "detach",
+    /// Text box padding: left and right, top and bottom, each side.
+    PadH => "pad-h",
+    PadV => "pad-v",
+    PadSides => "pad-sides",
     Eye => "eye",
     EyeOff => "eye-off",
     Close => "close",
@@ -2289,6 +2295,30 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.line(&sh, K);
             p.rect(3.0, 10.5, 16.5, 21.5, 1.8, N, K);
             p.seg((9.75, 14.5), (9.75, 17.5), K);
+        }
+        I::Detach => {
+            // The link's two halves pulled apart, with the break marked between them.
+            let link = |c: P2| {
+                let local = rrect_pts(-4.5, -2.8, 4.5, 2.8, 2.8);
+                p.shape(&tf(c, -45.0, &local), N, K);
+            };
+            link((7.0, 17.0));
+            link((17.0, 7.0));
+            p.seg((9.0, 4.0), (10.0, 7.0), K);
+            p.seg((4.0, 9.0), (7.0, 10.0), K);
+            p.seg((15.0, 20.0), (14.0, 17.0), K);
+            p.seg((20.0, 15.0), (17.0, 14.0), K);
+        }
+        I::PadH | I::PadV | I::PadSides => {
+            p.rect(3.5, 3.5, 20.5, 20.5, 2.5, N, K);
+            if icon != I::PadV {
+                p.seg((7.5, 7.5), (7.5, 16.5), K);
+                p.seg((16.5, 7.5), (16.5, 16.5), K);
+            }
+            if icon != I::PadH {
+                p.seg((7.5, 7.5), (16.5, 7.5), K);
+                p.seg((7.5, 16.5), (16.5, 16.5), K);
+            }
         }
         I::Eye | I::EyeOff => {
             let mut e = quad_pts((2.0, 12.0), (12.0, 4.0), (22.0, 12.0), 16);

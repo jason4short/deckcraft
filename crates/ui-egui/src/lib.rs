@@ -290,6 +290,9 @@ pub struct SlideApp {
     fonts_ready: bool,
     /// Tracking for a ⌘V that egui never reports (see `textless_paste`).
     paste_key: PasteKey,
+    /// Text detached from its style in the canvas panel this session: shown with every type control
+    /// and left alone when the style is edited, though its values still match the style.
+    pub detached: std::collections::HashSet<deckcraft_model::ShapeId>,
     last_time: f64,
     /// When AutoRecover data was last written (seconds, egui time).
     pub last_recovery: f64,
@@ -336,6 +339,7 @@ impl SlideApp {
             restyle: true,
             fonts_ready: false,
             paste_key: PasteKey::default(),
+            detached: Default::default(),
             last_time: 0.0,
             last_recovery: 0.0,
             quit_confirmed: false,

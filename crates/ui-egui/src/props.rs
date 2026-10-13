@@ -67,23 +67,27 @@ fn more_id() -> egui::Id {
 
 /// A section: hairline above, title, buttons at the right. Returns the button clicked.
 fn section(ui: &mut Ui, title: &str, empty: bool, actions: &[(Icon, &str)]) -> Option<usize> {
+    section_buttons(ui, title, empty, actions).iter().position(|r| r.clicked())
+}
+
+/// `section`, returning the buttons (for a menu one of them opens).
+fn section_buttons(ui: &mut Ui, title: &str, empty: bool, actions: &[(Icon, &str)]) -> Vec<egui::Response> {
     let t = Tokens::get(ui.ctx());
     ui.add_space(6.0);
     ui.painter().hline(ui.max_rect().x_range().expand(12.0), ui.cursor().min.y, Stroke::new(1.0, t.separator));
     ui.add_space(8.0);
-    let mut out = None;
+    let mut out = vec![];
     ui.horizontal(|ui| {
         ui.set_min_height(26.0);
         ui.label(egui::RichText::new(title).font(theme::bold(13.5)).color(if empty { t.text_dim } else { t.text }));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            for (k, (icon, tip)) in actions.iter().enumerate().rev() {
-                if icon_button(ui, *icon, tip, true).clicked() {
-                    out = Some(k);
-                }
+            for (icon, tip) in actions.iter().rev() {
+                out.push(icon_button(ui, *icon, tip, true));
             }
         });
     });
+    out.reverse();
     ui.add_space(2.0);
     out
 }
@@ -402,6 +406,84 @@ fn position(app: &mut SlideApp, ui: &mut Ui, x: &Xfrm, boxes: &[(ShapeId, Xfrm)]
     });
 }
 
+/// A text box's insets in points (left, top, right, bottom), inherited and defaulted as drawn.
+pub fn insets(app: &SlideApp, sh: &Shape) -> [f64; 4] {
+    use deckcraft_model::resolve::Ctx;
+    let b = app
+        .session
+        .active()
+        .and_then(|st| {
+            let doc = &st.doc;
+            let ctx = match st.selection.target {
+                deckcraft_engine::Target::Slides => doc.slides.get(st.selection.slide).and_then(|s| Ctx::for_slide(doc, s)),
+                deckcraft_engine::Target::Master { master } => doc.masters.get(master).map(|m| Ctx::for_master(doc, m)),
+                deckcraft_engine::Target::Layout { master, layout } => {
+                    doc.masters.get(master).and_then(|m| m.layouts.get(layout).map(|l| Ctx::for_layout(doc, m, l)))
+                }
+            }?;
+            Some(deckcraft_model::resolve::body(&ctx, sh))
+        })
+        .unwrap_or_default();
+    [b.inset_l.unwrap_or(7.2), b.inset_t.unwrap_or(3.6), b.inset_r.unwrap_or(7.2), b.inset_b.unwrap_or(3.6)]
+}
+
+/// Padding: horizontal (left and right) and vertical (top and bottom), or each side.
+fn padding(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
+    let u = units::small(app);
+    let [l, t, r, b] = insets(app, sh).map(|v| u.show(v).round());
+    let c = cols(ui);
+    let en = enabled(app, "format.margins");
+    let sides_id = egui::Id::new("props-padding-sides");
+    // Each side when asked for, or when the sides already differ.
+    let sides = ui.ctx().data(|d| d.get_temp::<bool>(sides_id)).unwrap_or(l != r || t != b);
+    caption(ui, "Padding");
+    let set = |app: &mut SlideApp, keys: &[&str], v: f64| {
+        let mut p = serde_json::Map::new();
+        for k in keys {
+            p.insert((*k).to_string(), json!(u.to_pt(v).max(0.0)));
+        }
+        run(app, "format.margins", Value::Object(p));
+    };
+    let toggle = |ui: &mut Ui| {
+        let tk = Tokens::get(ui.ctx());
+        let resp = icon_button(ui, Icon::PadSides, if sides { "Horizontal and vertical padding" } else { "Padding for each side" }, en);
+        if sides {
+            ui.painter().rect_stroke(resp.rect, CornerRadius::same(5), Stroke::new(1.0, tk.border), egui::StrokeKind::Inside);
+        }
+        if resp.clicked() {
+            ui.ctx().data_mut(|d| d.insert_temp(sides_id, !sides));
+        }
+    };
+    if !sides {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP;
+            if let Some(v) = number_or_mixed(ui, "pad-h", Prefix::Icon(Icon::PadH), common([l, r]), "", c, 1.0, en) {
+                set(app, &["left", "right"], v);
+            }
+            if let Some(v) = number_or_mixed(ui, "pad-v", Prefix::Icon(Icon::PadV), common([t, b]), "", c, 1.0, en) {
+                set(app, &["top", "bottom"], v);
+            }
+            toggle(ui);
+        });
+        return;
+    }
+    for (row, pair) in
+        [[("pad-l", "L", "left", l), ("pad-t", "T", "top", t)], [("pad-r", "R", "right", r), ("pad-b", "B", "bottom", b)]].into_iter().enumerate()
+    {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP;
+            for (id, label, key, v) in pair {
+                if let Some(nv) = number(ui, id, Prefix::Text(label), v, "", c, 1.0, en) {
+                    set(app, &[key], nv);
+                }
+            }
+            if row == 0 {
+                toggle(ui);
+            }
+        });
+    }
+}
+
 /// The gaps between neighbouring layers left to right (`horizontal`) or top to bottom, in points.
 pub fn gaps(boxes: &[(ShapeId, Xfrm)], horizontal: bool) -> Vec<f64> {
     let sorted = sorted_boxes(boxes, horizontal);
@@ -504,6 +586,9 @@ fn layout(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, x: &Xfrm, boxes: &[(Shape
             ui.ctx().data_mut(|d| d.insert_temp(lock_id, !lock));
         }
     });
+    if texty && sh.text.is_some() {
+        padding(app, ui, sh);
+    }
     if boxes.len() > 1 {
         caption(ui, "Spacing");
         let en = enabled(app, "shape.move");
@@ -598,12 +683,29 @@ fn appearance(app: &mut SlideApp, ui: &mut Ui, shapes: &[Shape], boxes: &[(Shape
 // ----- Typography -----------------------------------------------------------------------------
 
 fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
-    let details_id = egui::Id::new("props-type-details");
-    let details = ui.ctx().data(|d| d.get_temp::<bool>(details_id)).unwrap_or(false);
-    section(ui, "Typography", false, &[]);
     let st = fmt_state(app);
     let en = enabled(app, "format.bold");
-    style_chip(app, ui, &st, en);
+    let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
+    let styles = crate::textstyles::styles(&doc);
+    // Text with a style shows the style; text without one, the type controls and a styles button.
+    let shown = crate::textstyles::shown(app, &styles, &st);
+    let actions: &[(Icon, &str)] = if shown.is_none() { &[(Icon::Grid, "Text styles")] } else { &[] };
+    let buttons = section_buttons(ui, "Typography", false, actions);
+    if let Some(b) = buttons.first() {
+        crate::inspector::style_menu(app, b, "", 240.0);
+    }
+    match &shown {
+        Some(name) => style_chip(app, ui, &st, en, name, &styles),
+        None => {
+            let w = cols(ui) * 2.0 + GAP;
+            ui.scope(|ui| {
+                ui.set_max_width(w);
+                crate::inspector::type_basics(app, ui, &st, en);
+            });
+        }
+    }
+    let extras_id = egui::Id::new("props-type-extras");
+    let extras = ui.ctx().data(|d| d.get_temp::<bool>(extras_id)).unwrap_or(false);
     caption(ui, "Alignment");
     let c = cols(ui);
     let al = st.get("align").and_then(Value::as_str).unwrap_or("l").to_string();
@@ -618,7 +720,7 @@ fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         ];
         if let Some(k) = seg_group(ui, &h, c, en) {
             let id = ["format.alignLeft", "format.alignCenter", "format.alignRight"].get(k).copied().unwrap_or("format.alignLeft");
-            run(app, id, json!({}));
+            crate::textstyles::run_on_text(app, id, vec![(id, json!({}))]);
         }
         let v = [
             (Icon::AlignObjTop, "Text at top", anchor.starts_with('t')),
@@ -630,26 +732,34 @@ fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
             run(app, "format.anchor", json!({"anchor": anchor}));
         }
         let t = Tokens::get(ui.ctx());
-        let r = icon_button(ui, Icon::Settings, if details { "Hide type details" } else { "Type details: font, weight, size, spacing" }, true);
-        if details {
+        let tip = if extras { "Hide type details" } else { "Type details: bold, italic, underline, lists" };
+        let r = icon_button(ui, Icon::Settings, tip, true);
+        if extras {
             ui.painter().rect_stroke(r.rect, CornerRadius::same(5), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
         }
         if r.clicked() {
-            ui.ctx().data_mut(|d| d.insert_temp(details_id, !details));
+            ui.ctx().data_mut(|d| d.insert_temp(extras_id, !extras));
         }
     });
-    if details {
+    if extras {
         ui.add_space(6.0);
-        crate::inspector::text_details(app, ui, &st, en, !text_color_is_fill(sh));
+        crate::inspector::type_extras(app, ui, &st, en, false);
+    }
+    // A text box's colour is its Fill; a shape's text has its own row here.
+    if !text_color_is_fill(sh) {
+        caption(ui, "Color");
+        let c = text_color(app, sh);
+        let (picked, _) = color_row(app, ui, "Text", Some(c), None, None, cols(ui) * 2.0 + GAP);
+        if let Some(col) = picked {
+            crate::textstyles::run_on_text(app, "Font Color", vec![("format.color", json!({"color": col}))]);
+        }
     }
 }
 
-/// The text style chip: "Ag Title · 120/108", which opens the style menu.
-fn style_chip(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
+/// The text style chip: "Ag Title · 120/108", which opens the style menu, with a button at its
+/// right end that detaches the text from the style.
+fn style_chip(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool, current: &str, styles: &[crate::textstyles::TextStyle]) {
     let t = Tokens::get(ui.ctx());
-    let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
-    let styles = crate::textstyles::styles(&doc);
-    let current = crate::textstyles::current(app, &styles, st).unwrap_or_else(|| "Custom".into());
     let u = units::small(app);
     let size = st.get("size").and_then(Value::as_f64).unwrap_or(18.0);
     let lines = match st.get("lineSpacing") {
@@ -658,13 +768,32 @@ fn style_chip(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
     };
     let metrics = format!("{}/{}", widgets::fmt_num(u.show(size).round(), ""), widgets::fmt_num((u.show(size) * lines).round(), ""));
     let w = cols(ui) * 2.0 + GAP;
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 34.0), if en { Sense::click() } else { Sense::hover() });
+    let (r, _) = ui.allocate_exact_size(vec2(w, 34.0), Sense::hover());
+    let detach_r = Rect::from_center_size(pos2(r.max.x - 18.0, r.center().y), vec2(24.0, 24.0));
+    let body = Rect::from_min_max(r.min, pos2(detach_r.min.x - 2.0, r.max.y));
+    let resp = ui.interact(body, ui.id().with("style-chip"), if en { Sense::click() } else { Sense::hover() });
+    let hovered = resp.hovered() || ui.rect_contains_pointer(r);
     ui.painter().rect(r, CornerRadius::same(6), if resp.hovered() { t.hover } else { t.card }, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     let ag = ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, "Ag", theme::font(17.0), t.text);
-    let name = ui.painter().text(pos2(ag.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &current, theme::font(13.0), t.text);
+    let name = ui.painter().text(pos2(ag.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, current, theme::font(13.0), t.text);
     ui.painter().text(pos2(name.max.x + 4.0, r.center().y), Align2::LEFT_CENTER, format!("· {metrics}"), theme::font(13.0), t.text_dim);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, format!("Text style: {current}")));
-    crate::inspector::style_menu(app, &resp, &current, w.max(220.0));
+    crate::inspector::style_menu(app, &resp, current, w.max(220.0));
+    // Detach: shown while the pointer is over the chip, as in canvas editors.
+    let dresp = ui.interact(detach_r, ui.id().with("style-detach"), if en { Sense::click() } else { Sense::hover() });
+    dresp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, en, "Detach style"));
+    if hovered || dresp.hovered() {
+        if dresp.hovered() {
+            ui.painter().rect_filled(detach_r, CornerRadius::same(5), t.pressed);
+        }
+        icons::paint(ui.painter(), detach_r.shrink(4.0), Icon::Detach, t.text, !en);
+    }
+    let base = current.strip_suffix(" (copy)").unwrap_or(current);
+    if dresp.on_hover_text("Detach style").clicked()
+        && let Some(style) = styles.iter().find(|s| s.name == base)
+    {
+        crate::textstyles::detach(app, style);
+    }
 }
 
 // ----- Fill -----------------------------------------------------------------------------------
@@ -771,7 +900,7 @@ fn fill(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         let c = text_color(app, sh);
         let (picked, _) = color_row(app, ui, "Fill", Some(c), None, None, width);
         if let Some(col) = picked {
-            run(app, "format.color", json!({"color": col}));
+            crate::textstyles::run_on_text(app, "Font Color", vec![("format.color", json!({"color": col}))]);
         }
         return;
     }

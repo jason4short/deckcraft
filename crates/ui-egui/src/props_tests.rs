@@ -127,7 +127,7 @@ fn type_details_open_from_the_tune_button() {
     let mut h = harness();
     select_box(&mut h, "rect");
     assert!(h.query_by_label("Bold (⌘B)").is_none(), "details start folded");
-    click(&mut h, "Type details: font, weight, size, spacing");
+    click(&mut h, "Type details: bold, italic, underline, lists");
     click(&mut h, "Bold (⌘B)");
     let st = h.state_mut().session.execute("format.state", &json!({})).unwrap();
     assert_eq!(st["bold"], true);
@@ -186,4 +186,109 @@ fn spacing_is_the_gap_between_neighbours_and_sets_them_equal() {
     assert_eq!(common(gaps(&boxes, true)), None, "unequal gaps are Mixed");
     assert_eq!(spaced(&boxes, true, 20.0), vec![(ShapeId(3), 120.0), (ShapeId(1), 210.0)]);
     assert_eq!(common([20.0, 20.2]), Some(20.0));
+}
+
+fn run_colors(app: &SlideApp, id: u32) -> Vec<Option<Fill>> {
+    shape(app, id).text.unwrap().paragraphs.iter().flat_map(|p| p.runs.iter().map(|r| r.props.fill.clone())).collect()
+}
+
+fn red() -> Option<Fill> {
+    Some(Fill::solid(deckcraft_model::ColorRef::rgb(deckcraft_color::Rgba::rgb(255, 0, 0))))
+}
+
+#[test]
+fn text_colour_reaches_the_whole_box_while_typing_with_a_bare_caret() {
+    let mut h = harness();
+    let app = h.state_mut();
+    let id = app.run("insert.textBox", json!({"rect": [50, 50, 300, 40], "text": "Hello world"})).unwrap()["id"].as_u64().unwrap() as u32;
+    app.run("text.edit", json!({"id": id, "end": true})).unwrap();
+    crate::textstyles::run_on_text(app, "Font Color", vec![("format.color", json!({"color": "#FF0000"}))]);
+    assert!(run_colors(app, id).iter().all(|f| *f == red()), "every run: {:?}", run_colors(app, id));
+    let t = app.session.active().unwrap().selection.text.clone().expect("still typing");
+    assert_eq!((t.anchor, t.caret), ((0, 11), (0, 11)), "the caret stays at the end");
+}
+
+#[test]
+fn a_text_style_keeps_the_texts_own_colour() {
+    let mut h = harness();
+    let app = h.state_mut();
+    let id = app.run("insert.textBox", json!({"rect": [50, 50, 300, 40], "text": "Hello"})).unwrap()["id"].as_u64().unwrap() as u32;
+    app.run("format.color", json!({"color": "#FF0000"})).unwrap();
+    let doc = app.session.active().unwrap().doc.clone();
+    let styles = crate::textstyles::styles(&doc);
+    // Plain text links (the box inherits it); Title is copied.
+    for name in ["Plain text", "Title"] {
+        let style = styles.iter().find(|s| s.name == name).unwrap();
+        crate::textstyles::apply(app, style);
+        assert!(run_colors(app, id).iter().all(|f| *f == red()), "{name}: {:?}", run_colors(app, id));
+    }
+}
+
+#[test]
+fn a_shape_with_text_has_a_text_colour_row() {
+    let mut h = harness();
+    select_box(&mut h, "rect");
+    assert!(h.query_by_label("Text color").is_some(), "its Fill is the shape's, so the text gets its own colour swatch");
+    let mut h = harness();
+    let app = h.state_mut();
+    app.run("insert.textBox", json!({"rect": [50, 50, 300, 40], "text": "Hello"})).unwrap();
+    h.run_steps(3);
+    assert!(h.query_by_label("Text color").is_none(), "a text box's Fill is its text colour");
+    assert!(h.query_by_label("Fill color").is_some());
+}
+
+fn text_box(h: &mut Harness<'static, SlideApp>) -> u32 {
+    let id = h.state_mut().run("insert.textBox", json!({"rect": [50, 50, 300, 40], "text": "Hello"})).unwrap()["id"].as_u64().unwrap() as u32;
+    h.run_steps(3);
+    id
+}
+
+#[test]
+fn styled_text_shows_its_style_and_unstyled_text_its_type_controls() {
+    let mut h = harness();
+    text_box(&mut h);
+    assert!(h.query_by_label("Text style: Plain text").is_some(), "follows the presentation's default text style");
+    assert!(h.query_by_label("Text styles").is_none(), "the chip itself opens the styles");
+    assert!(h.query_by_label("Weight").is_none(), "type controls are folded into the style");
+    // Its own size: no longer the style.
+    h.state_mut().run("format.size", json!({"size": 31})).unwrap();
+    h.run_steps(3);
+    assert!(h.query_by_label("Weight").is_some());
+    assert!(h.query_by_label("Text styles").is_some(), "a button applies a style");
+}
+
+#[test]
+fn detaching_keeps_the_look_and_shows_the_type_controls() {
+    let mut h = harness();
+    let id = text_box(&mut h);
+    let before = h.state_mut().session.execute("format.state", &json!({})).unwrap()["size"].clone();
+    click(&mut h, "Detach style");
+    assert!(h.query_by_label("Weight").is_some(), "every type control");
+    assert!(h.query_by_label("Text style: Plain text").is_none());
+    let sh = shape(h.state(), id);
+    assert!(sh.text.unwrap().paragraphs[0].runs[0].props.size.is_some(), "the style's values are the text's own");
+    assert_eq!(h.state_mut().session.execute("format.state", &json!({})).unwrap()["size"], before, "same size");
+    // Applying a style again follows it.
+    let doc = h.state().session.active().unwrap().doc.clone();
+    let plain = crate::textstyles::styles(&doc).into_iter().find(|s| s.name == "Plain text").unwrap();
+    crate::textstyles::apply(h.state_mut(), &plain);
+    h.run_steps(3);
+    assert!(h.query_by_label("Text style: Plain text").is_some());
+}
+
+#[test]
+fn padding_sets_the_text_box_insets() {
+    let mut h = harness();
+    let id = text_box(&mut h);
+    let app = h.state();
+    let sh = shape(app, id);
+    assert_eq!(insets(app, &sh), [7.2, 3.6, 7.2, 3.6], "PowerPoint's default insets");
+    // Both sides at once (10 px = 5 pt), then each side.
+    h.state_mut().run("format.margins", json!({"left": 5, "right": 5})).unwrap();
+    h.run_steps(3);
+    let sh = shape(h.state(), id);
+    assert_eq!(insets(h.state(), &sh)[0], 5.0);
+    assert!(h.query_by_label("Padding for each side").is_some());
+    click(&mut h, "Padding for each side");
+    assert!(h.query_by_label("Horizontal and vertical padding").is_some(), "each side shown");
 }
