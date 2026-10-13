@@ -18,6 +18,7 @@ pub mod inspector;
 pub mod media;
 pub mod menus;
 pub mod panes;
+pub mod props;
 pub mod ribbon;
 pub mod selpane;
 pub mod show;

@@ -1,17 +1,17 @@
-//! The canvas shell's Design inspector: compact Align, Text, Link, Fill and Opacity sections for
-//! the selection, Layout and Background for the slide when nothing is selected, and the full
-//! Format Shape pane under "More options". Every control runs an engine command, and each one
-//! writes something PPTX already stores: font weights are offered only as names a font exposes
-//! (Regular and Bold, or a family name such as "Inter SemiBold"), never as free axis values, and
-//! opacity is the fill's or the picture's transparency.
+//! The canvas shell's Design tab. With a selection it shows the property editor (`props.rs`);
+//! with nothing selected, the deck's text styles (click one to edit it for the whole deck) and the
+//! slide's layout and background. Also the type details and style menu the property editor uses.
+//! Every control runs an engine command, and each one writes something PPTX already stores: font
+//! weights are offered only as names a font exposes (Regular and Bold, or a family name such as
+//! "Inter SemiBold"), never as free axis values.
 
 use deckcraft_fonts::FontDb;
-use deckcraft_model::{Fill, ShapeKind};
+use deckcraft_model::Fill;
 use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
 
 use crate::icons::{self, Icon};
-use crate::ribbon::{cref_param, enabled, fmt_state};
+use crate::ribbon::cref_param;
 use crate::theme::{self, Tokens};
 use crate::{SlideApp, widgets};
 
@@ -32,18 +32,7 @@ pub fn design(app: &mut SlideApp, ui: &mut Ui) {
         slide(app, ui);
         return;
     }
-    align(app, ui);
-    let texty = editing || shapes.iter().any(|s| s.text.is_some() || matches!(s.kind, ShapeKind::Shape));
-    if texty {
-        text(app, ui);
-    }
-    link(app, ui);
-    let picture = shapes.iter().all(|s| matches!(s.kind, ShapeKind::Picture { .. }));
-    if !picture {
-        fill(app, ui, shapes.first());
-    }
-    opacity(app, ui, shapes.first());
-    more(app, ui);
+    crate::props::show(app, ui);
 }
 
 // ----- Layout helpers ---------------------------------------------------------------------
@@ -117,41 +106,12 @@ fn color_field(
     out
 }
 
-fn scheme(app: &SlideApp) -> deckcraft_color::ColorScheme {
-    app.session.active().and_then(|d| d.doc.masters.first().map(|m| m.scheme())).unwrap_or_else(|| deckcraft_model::Theme::default().colors)
+fn t_auto(ui: &Ui) -> Color32 {
+    Tokens::get(ui.ctx()).text_faint
 }
 
-// ----- Align ------------------------------------------------------------------------------
-
-fn align(app: &mut SlideApp, ui: &mut Ui) {
-    let en = enabled(app, "arrange.align");
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 1.0;
-        for (icon, tip, edge) in [
-            (Icon::AlignObjLeft, "Align left", "left"),
-            (Icon::AlignObjCenter, "Align horizontal centers", "center"),
-            (Icon::AlignObjRight, "Align right", "right"),
-            (Icon::AlignObjTop, "Align top", "top"),
-            (Icon::AlignObjMiddle, "Align vertical centers", "middle"),
-            (Icon::AlignObjBottom, "Align bottom", "bottom"),
-        ] {
-            if seg(ui, icon, tip, false, en).clicked() {
-                run(app, "arrange.align", json!({"edge": edge}));
-            }
-            if edge == "right" {
-                ui.add_space(6.0);
-            }
-        }
-        let r = seg(ui, Icon::More, "Distribute", false, en);
-        egui::Popup::menu(&r).show(|ui| {
-            if ui.button("Distribute horizontally").clicked() {
-                run(app, "arrange.distribute", json!({"dir": "horizontal"}));
-            }
-            if ui.button("Distribute vertically").clicked() {
-                run(app, "arrange.distribute", json!({"dir": "vertical"}));
-            }
-        });
-    });
+fn scheme(app: &SlideApp) -> deckcraft_color::ColorScheme {
+    app.session.active().and_then(|d| d.doc.masters.first().map(|m| m.scheme())).unwrap_or_else(|| deckcraft_model::Theme::default().colors)
 }
 
 // ----- Text -------------------------------------------------------------------------------
@@ -195,12 +155,9 @@ pub fn weight_commands(base: &str, style: &str) -> Vec<(&'static str, Value)> {
     }
 }
 
-fn text(app: &mut SlideApp, ui: &mut Ui) {
-    let st = fmt_state(app);
-    let en = enabled(app, "format.bold");
-    section(ui, "Text");
-    style_picker(app, ui, &st, en);
-    ui.add_space(6.0);
+/// Type details: font, weight, size, line height, letter spacing, bold / italic / underline /
+/// strikethrough, lists and (when `color`) the text colour.
+pub(crate) fn text_details(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool, color: bool) {
     let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
     let bold = st.get("bold").and_then(Value::as_bool).unwrap_or(false);
     let (base, styles, current) = weights(&font, bold);
@@ -279,17 +236,6 @@ fn text(app: &mut SlideApp, ui: &mut Ui) {
                 run(app, id, json!({"on": !flag(key)}));
             }
         }
-        ui.add_space(8.0);
-        let al = st.get("align").and_then(Value::as_str).unwrap_or("l");
-        for (icon, tip, id, v) in [
-            (Icon::AlignLeft, "Align text left", "format.alignLeft", "l"),
-            (Icon::AlignCenter, "Center text", "format.alignCenter", "ctr"),
-            (Icon::AlignRight, "Align text right", "format.alignRight", "r"),
-        ] {
-            if seg(ui, icon, tip, al == v, en).clicked() {
-                run(app, id, json!({}));
-            }
-        }
     });
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
@@ -299,44 +245,22 @@ fn text(app: &mut SlideApp, ui: &mut Ui) {
         if seg(ui, Icon::Numbering, "Numbering", flag("numbering"), en).clicked() {
             run(app, "format.numbering", json!({"on": !flag("numbering")}));
         }
-        ui.add_space(8.0);
-        for (icon, tip, a) in [
-            (Icon::AlignObjTop, "Text at top", "top"),
-            (Icon::AlignObjMiddle, "Text in the middle", "middle"),
-            (Icon::AlignObjBottom, "Text at bottom", "bottom"),
-        ] {
-            if seg(ui, icon, tip, false, en).clicked() {
-                run(app, "format.anchor", json!({"anchor": a}));
-            }
-        }
     });
-    ui.add_space(6.0);
-    caption(ui, "Color");
-    if let Some(Some(c)) = color_field(app, ui, "Text color", Some(t_auto(ui)), None) {
-        run(app, "format.color", json!({"color": cref_param(&c)}));
+    if color {
+        ui.add_space(6.0);
+        caption(ui, "Color");
+        if let Some(Some(c)) = color_field(app, ui, "Text color", Some(t_auto(ui)), None) {
+            run(app, "format.color", json!({"color": cref_param(&c)}));
+        }
     }
 }
 
-/// The text style menu: the current style's name, large, and the deck's styles as previews.
-fn style_picker(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
-    let t = Tokens::get(ui.ctx());
+/// The text style menu, opened by `button`: the deck's styles as previews; picking one applies it
+/// (a link where the box can follow the style, else a copy).
+pub(crate) fn style_menu(app: &mut SlideApp, button: &egui::Response, current: &str, w: f32) {
     let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
     let styles = crate::textstyles::styles(&doc);
-    let current = crate::textstyles::current(app, &styles, st).unwrap_or_else(|| "Custom".into());
-    let current = current.as_str();
-    let w = ui.available_width();
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 40.0), if en { Sense::click() } else { Sense::hover() });
-    ui.painter().rect(
-        r,
-        CornerRadius::same(6),
-        if resp.hovered() { t.hover } else { t.field_bg },
-        Stroke::new(1.0, t.border),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(pos2(r.min.x + 10.0, r.center().y), Align2::LEFT_CENTER, current, theme::bold(20.0), if en { t.text } else { t.text_faint });
-    widgets::chevron(ui.painter(), pos2(r.max.x - 14.0, r.center().y), 3.5, t.text_dim);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, format!("Text style: {current}")));
-    egui::Popup::menu(&resp).width(w.max(220.0)).show(|ui| {
+    egui::Popup::menu(button).width(w).show(|ui| {
         for s in &styles {
             // A preview at a readable size: the style's own weight, its size scaled down.
             let size = (s.size() as f32 * 0.45).clamp(12.0, 26.0);
@@ -347,167 +271,13 @@ fn style_picker(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
             } else {
                 "This box can't follow the style in PPTX: its values are copied"
             };
-            if ui.add(egui::Button::selectable(s.name == current, label).min_size(vec2(w.max(220.0) - 12.0, 0.0))).on_hover_text(tip).clicked() {
+            let on = current == s.name || current.strip_suffix(" (copy)") == Some(s.name);
+            if ui.add(egui::Button::selectable(on, label).min_size(vec2(w - 12.0, 0.0))).on_hover_text(tip).clicked() {
                 crate::textstyles::apply(app, s);
                 ui.close();
             }
         }
     });
-}
-
-// ----- Link -------------------------------------------------------------------------------
-
-fn link(app: &mut SlideApp, ui: &mut Ui) {
-    let t = Tokens::get(ui.ctx());
-    section(ui, "Link");
-    let slides = app.session.active().map(|d| d.doc.slides.len()).unwrap_or(0);
-    let id = ui.id().with("insp-link");
-    let mut url: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
-    ui.horizontal(|ui| {
-        let w = ui.available_width() - 30.0;
-        let r = ui.add(egui::TextEdit::singleline(&mut url).hint_text("Add URL or slide number").desired_width(w).font(theme::font(12.5)));
-        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !url.trim().is_empty() {
-            let v = url.trim();
-            match v.parse::<usize>() {
-                Ok(n) if (1..=slides).contains(&n) => run(app, "insert.hyperlink", json!({"slide": n - 1})),
-                _ => run(app, "insert.hyperlink", json!({"url": v})),
-            }
-            url.clear();
-        }
-        let (b, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::click());
-        if resp.hovered() {
-            ui.painter().rect_filled(b, CornerRadius::same(5), t.hover);
-        }
-        widgets::chevron(ui.painter(), b.center(), 3.0, t.text_dim);
-        egui::Popup::menu(&resp).show(|ui| {
-            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                for i in 0..slides {
-                    if ui.button(format!("Slide {}", i + 1)).clicked() {
-                        run(app, "insert.hyperlink", json!({"slide": i}));
-                    }
-                }
-            });
-        });
-    });
-    ui.data_mut(|d| d.insert_temp(id, url));
-}
-
-// ----- Fill and opacity -------------------------------------------------------------------
-
-fn fill(app: &mut SlideApp, ui: &mut Ui, sh: Option<&deckcraft_model::Shape>) {
-    let Some(sh) = sh else { return };
-    section(ui, "Fill");
-    let sc = scheme(app);
-    let kind = match &sh.fill {
-        Some(Fill::None) => "none",
-        Some(Fill::Gradient(_)) => "gradient",
-        Some(Fill::Picture(_)) => "picture",
-        Some(Fill::Solid { .. }) => "solid",
-        _ => "auto",
-    };
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 1.0;
-        if seg(ui, Icon::ShapeFill, "Solid", kind == "solid" || kind == "auto", true).clicked() && kind != "solid" {
-            run(app, "shape.fill", json!({"color": "accent1"}));
-        }
-        if seg(ui, Icon::Grid, "Gradient", kind == "gradient", true).clicked() && kind != "gradient" {
-            let g = crate::fillui::default_gradient(deckcraft_model::ColorRef::scheme(deckcraft_color::SchemeSlot::Accent1), 90.0);
-            run(app, "shape.fill", json!({"gradient": crate::fillui::gradient_json(&g)}));
-        }
-        if seg(ui, Icon::Picture, "Picture…", kind == "picture", true).clicked()
-            && let Some(pick) = app.services.pick_open.as_mut()
-            && let Some(path) = pick("picture")
-            && let Some(Ok(bytes)) = app.services.read.as_ref().map(|r| r(&path))
-        {
-            run(app, "shape.fill", json!({"picture": deckcraft_engine::cmd::base64_encode(&bytes)}));
-        }
-        if seg(ui, Icon::Close, "No fill", kind == "none", true).clicked() {
-            run(app, "shape.fill", json!({"none": true}));
-        }
-    });
-    ui.add_space(4.0);
-    match &sh.fill {
-        Some(Fill::Gradient(g)) => {
-            if let Some(ng) = crate::fillui::gradient_editor(ui, "insp-grad", g, &sc) {
-                run(app, "shape.fill", json!({"gradient": crate::fillui::gradient_json(&ng)}));
-            }
-        }
-        Some(Fill::Picture(_)) => {}
-        f => {
-            let (label, swatch) = match f {
-                Some(Fill::Solid { color }) => {
-                    let c = color.resolve(&sc, None);
-                    (format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b), Some(theme::to_color32(deckcraft_color::Rgba { a: 255, ..c })))
-                }
-                Some(Fill::None) => ("No fill".to_string(), None),
-                _ => ("Automatic".to_string(), Some(t_auto(ui))),
-            };
-            match color_field(app, ui, &label, swatch, Some("No Fill")) {
-                Some(Some(c)) => run(app, "shape.fill", json!({"color": cref_param(&c)})),
-                Some(None) => run(app, "shape.fill", json!({"none": true})),
-                None => {}
-            }
-        }
-    }
-}
-
-fn t_auto(ui: &Ui) -> Color32 {
-    Tokens::get(ui.ctx()).text_faint
-}
-
-/// The selection's opacity, 0–1: a picture's, or a solid fill's colour alpha.
-pub fn opacity_of(sh: &deckcraft_model::Shape, sc: &deckcraft_color::ColorScheme) -> f64 {
-    match (&sh.kind, &sh.fill) {
-        (ShapeKind::Picture { fill }, _) => fill.alpha.unwrap_or(1.0),
-        (_, Some(Fill::Solid { color })) => color.resolve(sc, None).a as f64 / 255.0,
-        _ => 1.0,
-    }
-}
-
-fn opacity(app: &mut SlideApp, ui: &mut Ui, sh: Option<&deckcraft_model::Shape>) {
-    let Some(sh) = sh else { return };
-    let picture = matches!(sh.kind, ShapeKind::Picture { .. });
-    let has_fill = matches!(sh.fill, Some(Fill::Solid { .. } | Fill::Gradient(_) | Fill::Picture(_)));
-    if !picture && !has_fill {
-        return;
-    }
-    section(ui, "Opacity");
-    let sc = scheme(app);
-    let id = ui.id().with(("insp-opacity", sh.id.0));
-    let cur = (opacity_of(sh, &sc) * 100.0).round() as f32;
-    let mut v: f32 = ui.data_mut(|d| d.get_temp(id).unwrap_or(cur));
-    ui.spacing_mut().slider_width = (ui.available_width() - 64.0).max(60.0);
-    let r = ui.add(egui::Slider::new(&mut v, 0.0..=100.0).suffix("%").integer());
-    if r.drag_stopped() || (r.changed() && !r.dragged()) {
-        let tr = 1.0 - v as f64 / 100.0;
-        if picture {
-            run(app, "picture.adjust", json!({"transparency": tr}));
-        } else {
-            run(app, "shape.fill", json!({"transparency": tr}));
-        }
-    }
-    if r.dragged() {
-        ui.data_mut(|d| d.insert_temp(id, v));
-    } else {
-        ui.data_mut(|d| d.remove::<f32>(id));
-    }
-}
-
-// ----- Everything else --------------------------------------------------------------------
-
-/// The full Format Shape pane (effects, size, text box options…), folded away.
-fn more(app: &mut SlideApp, ui: &mut Ui) {
-    section(ui, "More options");
-    let id = ui.id().with("insp-more");
-    let mut open: bool = ui.data_mut(|d| d.get_temp(id).unwrap_or(false));
-    if ui.button(if open { "Hide shape effects, size and text box" } else { "Shape effects, size and text box…" }).clicked() {
-        open = !open;
-    }
-    ui.data_mut(|d| d.insert_temp(id, open));
-    if open {
-        ui.add_space(4.0);
-        crate::panes::format_shape(app, ui);
-    }
 }
 
 /// Nothing selected: the slide's layout, then its background.
