@@ -160,3 +160,31 @@ fn letters_type_while_editing_text_and_in_the_ribbon() {
     press(&mut h, egui::Key::T, "t");
     assert_eq!(h.state().session.tool.kind, ToolKind::Select, "the ribbon has no single-key tools");
 }
+
+/// Click at slide point (x, y) with the Select tool.
+fn click(app: &mut SlideApp, x: f64, y: f64) {
+    for kind in ["down", "up"] {
+        let ev: deckcraft_engine::PointerEvent = serde_json::from_value(json!({"kind": kind, "x": x, "y": y})).unwrap();
+        app.session.pointer(ev).unwrap();
+    }
+}
+
+#[test]
+fn locked_layers_are_selected_from_the_layers_list_not_the_canvas() {
+    for shell in [Shell::Canvas, Shell::Classic] {
+        let mut app = SlideApp::new(Session::with_new(), Services::default());
+        app.run("view.shell", json!({"shell": shell.id()})).unwrap();
+        let back = app.session.execute("shape.insert", &json!({"preset": "rect", "rect": [600, 300, 200, 150]})).unwrap()["id"].as_u64().unwrap();
+        app.session.execute("shape.lock", &json!({"ids": [back], "locked": true})).unwrap();
+        app.session.execute("edit.deselect", &json!({})).unwrap();
+        click(&mut app, 700.0, 375.0);
+        let picked = app.session.active().unwrap().selection.shapes.iter().any(|i| i.0 as u64 == back);
+        match shell {
+            Shell::Canvas => assert!(!picked, "the click passes through the locked layer"),
+            Shell::Classic => assert!(picked, "PowerPoint's lock: picked, but it doesn't move"),
+        }
+        // The Layers list (the Selection pane's rows) selects it either way.
+        app.session.execute("selection.select", &json!({"ids": [back]})).unwrap();
+        assert_eq!(app.session.active().unwrap().selection.shapes.len(), 1);
+    }
+}

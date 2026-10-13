@@ -312,6 +312,12 @@ impl SlideApp {
         self
     }
 
+    /// Engine behaviour that follows the layout: in the canvas shell clicks pass through locked
+    /// layers (select them in the Layers list); the ribbon keeps PowerPoint's lock.
+    fn sync_shell_prefs(&mut self) {
+        self.session.prefs.locked_click_through = self.ui.shell == Shell::Canvas;
+    }
+
     /// Run `cmds` as one undo step named `label` (each command would make its own).
     pub fn run_as_one(&mut self, label: &str, cmds: Vec<(&str, Value)>) {
         let before = self.session.active().map(|d| d.history.undo.len()).unwrap_or(0);
@@ -554,6 +560,7 @@ impl SlideApp {
                     None if self.ui.shell == Shell::Classic => Shell::Canvas,
                     None => Shell::Classic,
                 };
+                self.sync_shell_prefs();
                 return Ok(json!({"shell": self.ui.shell.id()}));
             }
             "view.grayscale" => self.ui.grayscale = self.flag(p, self.ui.grayscale),
@@ -1013,6 +1020,7 @@ impl SlideApp {
         self.sync_backstage();
         self.keyboard(&ctx);
         self.sync_backstage();
+        self.sync_shell_prefs();
         ribbon::title_bar(self, ui);
         if self.ui.shell == Shell::Canvas && self.backstage.is_none() {
             canvas_shell::show(self, ui);
