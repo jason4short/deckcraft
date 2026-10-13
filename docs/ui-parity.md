@@ -162,8 +162,15 @@ control channel's `ui.set {shell}`, or `deckcraft --shell canvas` (`DECKCRAFT_SH
 stays the default. Both layouts drive the same commands, so files, undo and PPTX output don't change
 with the layout (`crates/ui-egui/src/canvas_shell.rs`).
 
-| Part | Phase 1 (landed) | Later |
+| Part | Landed (phases 1–2) | Later |
 |---|---|---|
 | Left sidebar | Name and folder (menu: Info, Save As, Export, Print, Close), slide / grid switch, New slide with layouts, +, slide list with sections, Layers (the Selection pane's list: rename, restack, eye, lock) | |
-| Inspector | Present from this slide, Export, Design / Animate, zoom menu; Design shows Format Shape for a selection, Format Background otherwise; Animate shows the Animation pane | Phase 2: compact Text, Fill, Link, Opacity and alignment sections |
+| Inspector | Present from this slide, Export, Design / Animate, zoom menu. Design (`crates/ui-egui/src/inspector.rs`): Align and Distribute; Text (font, weight, size, line height, letter spacing, bold / italic / underline / strike, alignment, bullets, numbering, vertical anchor, colour); Link (URL or slide number); Fill (solid, gradient with the gradient editor, picture, none); Opacity; More options (the full Format Shape pane). With nothing selected: Layout and Background. Animate shows the Animation pane | Named text styles (phase 4); Animate tab with transitions (phase 5) |
 | Under the slide | Presenter notes card with a grip; floating toolbar: Select, Text box, Picture, Shape, Table, Chart, Comment, notes toggle, command search | Phase 3: more tools, keyboard tool shortcuts |
+
+PPTX-safe choices in the inspector: a weight is offered only when PPTX can name it, as Regular or
+Bold (the bold flag) or as a family name of its own ("Avenir Next Demi Bold"), so a variable font
+such as Inter offers Regular and Bold, not its in-between instances. Opacity is the fill's
+transparency (`shape.fill {transparency}`) or the picture's (`picture.adjust {transparency}`);
+outlines and text keep their own colour's transparency. Letter spacing offers presets because
+`format.state` doesn't report the current value.

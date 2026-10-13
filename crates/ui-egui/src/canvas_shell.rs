@@ -199,11 +199,10 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::right("canvas_inspector")
         .resizable(true)
-        .default_size(app.ui.pane_width.max(INSPECTOR_W))
-        .size_range(240.0..=480.0)
+        .default_size(INSPECTOR_W)
+        .size_range(240.0..=400.0)
         .frame(egui::Frame::NONE.fill(t.card).inner_margin(egui::Margin { left: 12, right: 12, top: 10, bottom: 0 }))
         .show(ui, |ui| {
-            app.ui.pane_width = ui.available_width() + 24.0;
             edge(ui, ui.max_rect().min.x - 12.0, &t);
             inspector_header(app, ui);
             ui.add_space(8.0);
@@ -213,11 +212,17 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
             ui.painter().hline(r.x_range().expand(12.0), ui.cursor().min.y, Stroke::new(1.0, t.separator));
             ui.add_space(8.0);
             let tab = app.ui.inspector_tab.clone();
-            let has_sel = app.session.active().is_some_and(|d| !d.selection.shapes.is_empty() || d.selection.text.is_some());
-            egui::ScrollArea::vertical().id_salt("canvas_inspector_body").auto_shrink([false, false]).show(ui, |ui| match tab.as_str() {
-                "animate" => crate::panes::animation(app, ui),
-                _ if has_sel => crate::panes::format_shape(app, ui),
-                _ => crate::panes::background(app, ui),
+            // The panel keeps the width it was given: wide content (the gradient editor) is
+            // clipped rather than widening the panel frame after frame.
+            let w = ui.available_width();
+            egui::ScrollArea::both().id_salt("canvas_inspector_body").auto_shrink([false, false]).show(ui, |ui| {
+                ui.set_max_width(w);
+                // Slider tracks and fields stand out from the white card.
+                ui.visuals_mut().widgets.inactive.bg_fill = t.pressed;
+                match tab.as_str() {
+                    "animate" => crate::panes::animation(app, ui),
+                    _ => crate::inspector::design(app, ui),
+                }
             });
         });
 }

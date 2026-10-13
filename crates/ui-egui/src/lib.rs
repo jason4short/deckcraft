@@ -14,6 +14,7 @@ pub mod credits;
 pub mod dialogs;
 pub mod fillui;
 pub mod icons;
+pub mod inspector;
 pub mod media;
 pub mod menus;
 pub mod panes;
