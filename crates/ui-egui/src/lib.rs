@@ -293,6 +293,14 @@ pub struct SlideApp {
     /// Text detached from its style in the canvas panel this session: shown with every type control
     /// and left alone when the style is edited, though its values still match the style.
     pub detached: std::collections::HashSet<deckcraft_model::ShapeId>,
+    /// The slide list has the keyboard (a thumbnail was clicked last): ⌘D, Delete, ⇧⌘H, ⌘↑ / ⌘↓
+    /// and ⇧↑ / ⇧↓ act on slides (see `thumbs::slide_key`). A click anywhere else gives it back.
+    pub slides_focus: bool,
+    /// Where the slide list was drawn last frame, so a click there keeps its focus.
+    pub thumbs_rect: Option<egui::Rect>,
+    /// The slide a ⇧-extended range starts from, and the one it reaches.
+    pub slide_anchor: Option<usize>,
+    pub slide_cursor: Option<usize>,
     last_time: f64,
     /// When AutoRecover data was last written (seconds, egui time).
     pub last_recovery: f64,
@@ -340,6 +348,10 @@ impl SlideApp {
             fonts_ready: false,
             paste_key: PasteKey::default(),
             detached: Default::default(),
+            slides_focus: false,
+            thumbs_rect: None,
+            slide_anchor: None,
+            slide_cursor: None,
             last_time: 0.0,
             last_recovery: 0.0,
             quit_confirmed: false,
@@ -962,9 +974,14 @@ impl SlideApp {
         let events = ctx.input(|i| i.events.clone());
         // Tracked before the early returns so a paste into a text field isn't repeated later.
         let textless_paste = self.paste_key.textless_paste(&events);
+        self.track_slides_focus(ctx);
         if ctx.memory(|m| m.focused().is_some()) || self.dialog.as_ref().is_some_and(|d| d.modal()) || self.palette.is_some() {
             return;
         }
+        let slides_keys = self.slides_focus || self.ui.view == ViewMode::Sorter;
+        // Nothing selected on the slide: Delete and Cut have nothing to act on (the engine would
+        // take the slide), as in PowerPoint.
+        let nothing = self.session.active().is_some_and(|d| d.selection.shapes.is_empty() && d.selection.text.is_none());
         if self.backstage.is_some() {
             // The File tab: its own keys (Esc goes back, arrows walk the side menu) and app
             // shortcuts (New, Open, Command Palette…); typing, pasting or deleting would edit the
@@ -1001,14 +1018,17 @@ impl SlideApp {
                 }
                 egui::Event::Ime(ime) => self.ime_event(&ime),
                 egui::Event::Copy => {
-                    if let Ok(v) = self.session.execute("edit.copy", &json!({}))
+                    let p = if slides_keys { json!({"scope": "slides"}) } else { json!({}) };
+                    if let Ok(v) = self.session.execute("edit.copy", &p)
                         && let Some(t) = v.get("text").and_then(Value::as_str)
                     {
                         ctx.copy_text(t.to_string());
                     }
                 }
+                egui::Event::Cut if nothing && !slides_keys => {}
                 egui::Event::Cut => {
-                    if let Ok(v) = self.session.execute("edit.cut", &json!({}))
+                    let p = if slides_keys { json!({"scope": "slides"}) } else { json!({}) };
+                    if let Ok(v) = self.session.execute("edit.cut", &p)
                         && let Some(t) = v.get("text").and_then(Value::as_str)
                     {
                         ctx.copy_text(t.to_string());
@@ -1026,6 +1046,12 @@ impl SlideApp {
                 }
                 egui::Event::Key { key, pressed: true, modifiers, .. } => {
                     let mods = Mods { shift: modifiers.shift, alt: modifiers.alt, cmd: modifiers.command || modifiers.ctrl };
+                    if slides_keys && thumbs::slide_key(self, key, mods) {
+                        continue;
+                    }
+                    if nothing && !slides_keys && matches!(key, egui::Key::Delete | egui::Key::Backspace) {
+                        continue;
+                    }
                     if self.ui.shell == Shell::Canvas && canvas_shell::tool_key(self, key, mods) {
                         continue;
                     }
@@ -1048,6 +1074,17 @@ impl SlideApp {
             self.paste("");
         }
         self.drain_requests();
+    }
+
+    /// The slide list keeps the keyboard until a click lands elsewhere, or a shape or text is
+    /// selected (from the Layers list, say).
+    fn track_slides_focus(&mut self, ctx: &egui::Context) {
+        let elsewhere =
+            ctx.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p| !self.thumbs_rect.is_some_and(|r| r.contains(p))));
+        let editing = self.session.active().is_none_or(|d| !d.selection.shapes.is_empty() || d.selection.text.is_some());
+        if elsewhere || editing {
+            self.slides_focus = false;
+        }
     }
 
     /// Paste from the system clipboard: its text, else an image on it (screenshots, copied
@@ -1083,6 +1120,8 @@ impl SlideApp {
         }
         self.sync_backstage();
         self.keyboard(&ctx);
+        // Drawn again below when the slide list is shown.
+        self.thumbs_rect = None;
         self.sync_backstage();
         self.sync_shell_prefs();
         ribbon::title_bar(self, ui);

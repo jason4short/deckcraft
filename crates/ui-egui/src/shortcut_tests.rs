@@ -97,3 +97,82 @@ fn shift_command_z_redoes() {
     press(&mut h, Key::Z, CMD | Modifiers::SHIFT);
     assert_eq!(order(&h).len(), n, "⇧⌘Z redoes it");
 }
+
+// ----- The slide list --------------------------------------------------------------------
+
+fn slides(h: &Harness<'static, SlideApp>) -> Vec<u32> {
+    h.state().session.active().unwrap().doc.slides.iter().map(|s| s.id.0).collect()
+}
+
+/// Four slides, the first current, and the slide list holding the keyboard.
+fn slide_list() -> Harness<'static, SlideApp> {
+    let (mut h, _) = harness();
+    for _ in 0..3 {
+        h.state_mut().run("slide.new", json!({})).unwrap();
+    }
+    h.state_mut().run("slide.go", json!({"index": 0})).unwrap();
+    h.state_mut().slides_focus = true;
+    h.run_steps(2);
+    h
+}
+
+#[test]
+fn a_click_on_a_thumbnail_gives_the_slide_list_the_keyboard_and_one_elsewhere_takes_it() {
+    let (mut h, _) = harness();
+    let r = h.state().thumbs_rect.expect("the slide list is shown");
+    let click = |h: &mut Harness<'static, SlideApp>, p: egui::Pos2| {
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE });
+            h.run_steps(1);
+        }
+        h.run_steps(1);
+    };
+    click(&mut h, r.min + egui::vec2(r.width() / 2.0, 60.0));
+    assert!(h.state().slides_focus, "the thumbnail took the keyboard");
+    let slide = h.state().slide_rect.unwrap();
+    click(&mut h, slide.left_bottom() + egui::vec2(10.0, -10.0));
+    assert!(!h.state().slides_focus, "the slide took it back");
+}
+
+#[test]
+fn slide_list_keys_duplicate_delete_and_hide_slides() {
+    let mut h = slide_list();
+    press(&mut h, Key::D, CMD);
+    assert_eq!(slides(&h).len(), 5, "⌘D duplicates the slide");
+    press(&mut h, Key::Delete, Modifiers::NONE);
+    assert_eq!(slides(&h).len(), 4, "Delete removes it");
+    press(&mut h, Key::H, CMD | Modifiers::SHIFT);
+    let d = h.state().session.active().unwrap();
+    assert!(d.doc.slides[d.selection.slide].hidden, "⇧⌘H hides it");
+}
+
+#[test]
+fn slide_list_keys_extend_the_selection_and_move_slides() {
+    let mut h = slide_list();
+    let before = slides(&h);
+    press(&mut h, Key::ArrowDown, Modifiers::SHIFT);
+    assert_eq!(h.state().session.active().unwrap().selection.slides.len(), 2, "⇧↓ selects the next slide too");
+    press(&mut h, Key::ArrowDown, CMD);
+    assert_eq!(slides(&h), vec![before[2], before[0], before[1], before[3]], "⌘↓ moves both down one place");
+    press(&mut h, Key::ArrowDown, CMD | Modifiers::SHIFT);
+    assert_eq!(slides(&h), vec![before[2], before[3], before[0], before[1]], "⇧⌘↓ to the end, in order");
+    assert_eq!(h.state().session.active().unwrap().selection.slides.len(), 2, "still selected");
+}
+
+#[test]
+fn delete_on_an_empty_selection_leaves_the_slide_alone() {
+    let mut h = slide_list();
+    h.state_mut().slides_focus = false;
+    press(&mut h, Key::Delete, Modifiers::NONE);
+    press(&mut h, Key::D, CMD);
+    assert_eq!(slides(&h).len(), 4, "the canvas has nothing selected to delete or duplicate");
+}
+
+#[test]
+fn moving_slides_keeps_their_order() {
+    use crate::thumbs::moves;
+    assert_eq!(moves(&[1, 2], 5, false, false), vec![(1, 0), (2, 1)]);
+    assert_eq!(moves(&[0, 2], 5, false, false), vec![(2, 1)], "the first can't move up; the next closes up");
+    assert_eq!(moves(&[1, 3], 5, true, true), vec![(3, 4), (1, 3)]);
+    assert_eq!(moves(&[2], 3, true, false), vec![], "already last");
+}

@@ -96,7 +96,13 @@ start/current, view switching. Mac-style object shortcuts, as in Keynote and can
 beside them in both layouts (`menus::mac_shortcut`): ⌘G group, ⇧⌘G ungroup, ⌥⌘] bring to front,
 ⌥⌘[ send to back, ⇧⌘L lock / unlock and ⇧⌘H hide / show the selection (any unlocked or shown
 layer makes them all locked or hidden), ⇧⌘Z redo; ⇧⌘V and ⌥⇧⌘V paste text without its
-formatting. ⌘V pastes an image on the clipboard (a screenshot, a picture or an image file copied in
+formatting. A click on a thumbnail gives the slide list the keyboard (its selected rows are
+tinted) until a click lands elsewhere or a shape is selected (`thumbs::slide_key`): ⌘D duplicates
+the selected slides, Delete removes them, ⇧⌘H hides or shows them (⌘H stays the Mac's Hide app),
+⌘↑ / ⌘↓ (or ⌘← / ⌘→) move them one place and ⇧⌘↑ / ⇧⌘↓ to the start or end, ↑ / ↓ go to the
+previous or next slide, ⇧↑ / ⇧↓ extend the selection, ⌘A selects every slide, and ⌘C / ⌘X copy
+or cut slides. With nothing selected on the slide, Delete and ⌘X do nothing (the slide isn't
+removed). ⌘V pastes an image on the clipboard (a screenshot, a picture or an image file copied in
 Finder) as a picture. Not yet: Cmd+F Find opening a find bar on the slide, Option+drag
 precision without snapping, F6 pane cycling, ribbon KeyTips (Windows).
 

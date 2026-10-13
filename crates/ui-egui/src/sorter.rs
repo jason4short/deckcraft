@@ -57,6 +57,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                         p.text(pos2(img.max.x, img.max.y + 12.0), Align2::RIGHT_CENTER, format!("★ {}", tr.kind), theme::font(10.5), t.text_faint);
                     }
                     if resp.clicked() {
+                        app.slide_anchor = Some(i);
+                        app.slide_cursor = Some(i);
                         let add = ui.input(|i| i.modifiers.command);
                         if add {
                             if let Some(id) = id {
