@@ -153,3 +153,17 @@ imitate Microsoft's. No pixel comparison against PowerPoint screenshots has been
 | 2026-10-12 | minor | Selection Pane matched to PowerPoint (#133): drag and drop, arrows, groups, eye, Lock |
 | 2026-10-12 | minor | Text editing keys: Ctrl+arrows, Ctrl+Backspace/Delete, Ctrl+Up/Down, Home/End on wrapped lines, Shift+F3, font size keys, as observed in PowerPoint for Windows (#268) |
 | 2026-10-10 | major | Created: shell, panes and dialogs, direct manipulation, shortcuts and visual fidelity against PowerPoint 16.113 |
+
+## Canvas shell (in progress, branch `feat/canvas-shell`)
+
+A second window layout beside the PowerPoint-style one, for people who prefer a canvas-first
+editor. Choose it in Preferences (Layout: Ribbon / Canvas), with `view.shell {shell: canvas}`, the
+control channel's `ui.set {shell}`, or `deckcraft --shell canvas` (`DECKCRAFT_SHELL`). The ribbon
+stays the default. Both layouts drive the same commands, so files, undo and PPTX output don't change
+with the layout (`crates/ui-egui/src/canvas_shell.rs`).
+
+| Part | Phase 1 (landed) | Later |
+|---|---|---|
+| Left sidebar | Name and folder (menu: Info, Save As, Export, Print, Close), slide / grid switch, New slide with layouts, +, slide list with sections, Layers (the Selection pane's list: rename, restack, eye, lock) | |
+| Inspector | Present from this slide, Export, Design / Animate, zoom menu; Design shows Format Shape for a selection, Format Background otherwise; Animate shows the Animation pane | Phase 2: compact Text, Fill, Link, Opacity and alignment sections |
+| Under the slide | Presenter notes card with a grip; floating toolbar: Select, Text box, Picture, Shape, Table, Chart, Comment, notes toggle, command search | Phase 3: more tools, keyboard tool shortcuts |

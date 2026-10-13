@@ -108,9 +108,7 @@ fn small_icon_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> egu
 pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
-    let rows = rows(st.shapes(), &app.selpane.collapsed);
-    let selected: Vec<u32> = st.selection.shapes.iter().map(|i| i.0).collect();
-    let has_sel = !selected.is_empty();
+    let has_sel = !st.selection.shapes.is_empty();
 
     ui.horizontal(|ui| {
         if ui.add(egui::Button::new("Show All").stroke(Stroke::new(1.0, t.border))).clicked() {
@@ -129,6 +127,15 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         });
     });
     ui.add_space(6.0);
+    list(app, ui);
+}
+
+/// The rows alone, without the Show All / Hide All header (the canvas shell's Layers list).
+pub fn list(app: &mut SlideApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let Some(st) = app.session.active() else { return };
+    let rows = rows(st.shapes(), &app.selpane.collapsed);
+    let selected: Vec<u32> = st.selection.shapes.iter().map(|i| i.0).collect();
 
     // The list has the keyboard while one of its rows has focus.
     let focused_row = ui.memory(|m| m.focused()).and_then(|f| rows.iter().find(|r| row_id(r.id) == f).map(|r| r.id));

@@ -85,7 +85,7 @@ fn color_button(
     });
 }
 
-fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
+pub(crate) fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
     let Some(sh) = st.selected_shapes().first().map(|s| (*s).clone()) else {
@@ -339,7 +339,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
     }
 }
 
-fn background(app: &mut SlideApp, ui: &mut Ui) {
+pub(crate) fn background(app: &mut SlideApp, ui: &mut Ui) {
     let sc = scheme(app);
     let bg = app.session.active().and_then(|d| d.current_slide().and_then(|s| s.background.clone()));
     let fill = match &bg {
@@ -457,7 +457,7 @@ fn background(app: &mut SlideApp, ui: &mut Ui) {
     });
 }
 
-fn animation(app: &mut SlideApp, ui: &mut Ui) {
+pub(crate) fn animation(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
     let Some(slide) = st.current_slide() else { return };

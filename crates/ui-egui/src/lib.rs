@@ -8,6 +8,7 @@
 
 pub mod backstage;
 pub mod canvas;
+pub mod canvas_shell;
 pub mod control;
 pub mod credits;
 pub mod dialogs;
@@ -75,11 +76,41 @@ pub enum ViewMode {
     Reading,
 }
 
+/// The window layout around the slide.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Shell {
+    /// PowerPoint-style: ribbon, thumbnails, status bar.
+    #[default]
+    Classic,
+    /// Canvas-first: a slides-and-layers sidebar, an inspector on the right, no ribbon.
+    Canvas,
+}
+
+impl Shell {
+    pub fn id(self) -> &'static str {
+        match self {
+            Shell::Classic => "classic",
+            Shell::Canvas => "canvas",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Shell> {
+        match s {
+            "classic" => Some(Shell::Classic),
+            "canvas" => Some(Shell::Canvas),
+            _ => None,
+        }
+    }
+}
+
 /// Persisted UI state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
     pub brightness: theme::Brightness,
+    pub shell: Shell,
+    /// Canvas shell inspector tab: `design` or `animate`.
+    pub inspector_tab: String,
     pub tab: String,
     pub ribbon_collapsed: bool,
     pub view: ViewMode,
@@ -108,6 +139,8 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             brightness: theme::Brightness::Light,
+            shell: Shell::Classic,
+            inspector_tab: "design".into(),
             tab: "Home".into(),
             ribbon_collapsed: false,
             view: ViewMode::Normal,
@@ -150,6 +183,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.tab", "Ribbon Tab", None, "{tab}"),
     ("view.collapseRibbon", "Collapse the Ribbon", Some("Cmd+F1"), "{}"),
     ("view.dark", "Dark Mode", None, "{on?: bool}"),
+    ("view.shell", "Interface Layout", None, "{shell?: classic|canvas}"),
     ("view.grayscale", "Grayscale", None, "{on?: bool}"),
     ("show.start", "Slide Show", Some("F5"), "{from?: index}"),
     ("show.presenter", "Presenter View", None, "{on?: bool}"),
@@ -491,6 +525,14 @@ impl SlideApp {
                 let on = self.flag(p, self.ui.brightness == theme::Brightness::Dark);
                 self.ui.brightness = if on { theme::Brightness::Dark } else { theme::Brightness::Light };
                 self.restyle = true;
+            }
+            "view.shell" => {
+                self.ui.shell = match p.get("shell").and_then(Value::as_str) {
+                    Some(id) => Shell::parse(id).ok_or_else(|| format!("unknown layout `{id}` (classic or canvas)"))?,
+                    None if self.ui.shell == Shell::Classic => Shell::Canvas,
+                    None => Shell::Classic,
+                };
+                return Ok(json!({"shell": self.ui.shell.id()}));
             }
             "view.grayscale" => self.ui.grayscale = self.flag(p, self.ui.grayscale),
             "show.start" => {
@@ -944,6 +986,11 @@ impl SlideApp {
         self.keyboard(&ctx);
         self.sync_backstage();
         ribbon::title_bar(self, ui);
+        if self.ui.shell == Shell::Canvas && self.backstage.is_none() {
+            canvas_shell::show(self, ui);
+            self.finish_frame(&ctx, t0);
+            return;
+        }
         if self.backstage.is_none() && self.session.active().is_some() {
             ribbon::show(self, ui);
             status::status_bar(self, ui);
@@ -978,10 +1025,15 @@ impl SlideApp {
                 }
             }
         });
+        self.finish_frame(&ctx, t0);
+    }
+
+    /// Toasts, dialogs, the palette and queued requests: drawn over whichever shell is in use.
+    fn finish_frame(&mut self, ctx: &egui::Context, t0: f64) {
         toast::note_missing_fonts(self);
-        toast::show(self, &ctx);
-        dialogs::show(self, &ctx);
-        menus::palette(self, &ctx);
+        toast::show(self, ctx);
+        dialogs::show(self, ctx);
+        menus::palette(self, ctx);
         for url in std::mem::take(&mut self.pending_urls) {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }

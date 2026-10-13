@@ -316,7 +316,7 @@ fn clipboard_group(app: &mut SlideApp, ui: &mut Ui) {
     });
 }
 
-fn layout_menu(app: &mut SlideApp, ui: &mut Ui, cmd: &str) {
+pub(crate) fn layout_menu(app: &mut SlideApp, ui: &mut Ui, cmd: &str) {
     let layouts: Vec<(String, deckcraft_model::LayoutId)> = app
         .session
         .active()

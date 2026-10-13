@@ -111,13 +111,9 @@ fn labeled(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> egui::Response {
 /// The speaker notes editor under the slide.
 pub fn notes_pane(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    let Some(st) = app.session.active() else { return };
-    if st.selection.target != deckcraft_engine::Target::Slides {
+    if app.session.active().is_none_or(|st| st.selection.target != deckcraft_engine::Target::Slides) {
         return;
     }
-    let idx = st.selection.slide;
-    let uid = st.uid;
-    let current = st.current_slide().map(|s| s.notes_text()).unwrap_or_default();
     egui::Panel::bottom("notes")
         .resizable(true)
         .default_size(app.ui.notes_height)
@@ -128,35 +124,45 @@ pub fn notes_pane(app: &mut SlideApp, ui: &mut Ui) {
             let rect = ui.max_rect();
             ui.painter()
                 .line_segment([pos2(rect.min.x - 8.0, rect.min.y - 6.0), pos2(rect.max.x + 8.0, rect.min.y - 6.0)], Stroke::new(1.0, t.separator));
-            // Keep a local buffer per slide; commit when it changes and the field loses focus.
-            let id = egui::Id::new("notes_edit");
-            let focused = ui.ctx().memory(|m| m.has_focus(id));
-            // Focus can leave in the frame before the field is drawn (Escape, a click on a
-            // thumbnail): what was typed is still committed, to the slide it was typed for.
-            let was_focused = ui.ctx().memory(|m| m.had_focus_last_frame(id));
-            if app.notes_buf.0 != uid || app.notes_buf.1 != idx {
-                let (old_uid, old_idx, typed) = std::mem::replace(&mut app.notes_buf, (uid, idx, current.clone()));
-                let old = app.session.active().and_then(|d| d.doc.slides.get(old_idx)).map(|s| s.notes_text());
-                if was_focused && old_uid == uid && old.is_some_and(|o| o != typed) {
-                    let _ = app.run("slide.notes", json!({"text": typed, "index": old_idx}));
-                }
-            }
-            if !focused && !was_focused && app.notes_buf.2 != current {
-                app.notes_buf.2 = current.clone();
-            }
-            let mut buf = app.notes_buf.2.clone();
-            let r = ui.add(
-                egui::TextEdit::multiline(&mut buf)
-                    .id(id)
-                    .hint_text("Click to add notes")
-                    .frame(egui::Frame::NONE)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(2)
-                    .font(theme::font(13.0)),
-            );
-            app.notes_buf.2 = buf.clone();
-            if r.lost_focus() && buf != current {
-                let _ = app.run("slide.notes", json!({"text": buf, "index": idx}));
-            }
+            notes_editor(app, ui, "Click to add notes");
         });
+}
+
+/// The notes field for the current slide: a buffer per slide, committed (`slide.notes`) when it
+/// loses focus or the slide changes.
+pub fn notes_editor(app: &mut SlideApp, ui: &mut Ui, hint: &str) {
+    let Some(st) = app.session.active() else { return };
+    let idx = st.selection.slide;
+    let uid = st.uid;
+    let current = st.current_slide().map(|s| s.notes_text()).unwrap_or_default();
+    // Keep a local buffer per slide; commit when it changes and the field loses focus.
+    let id = egui::Id::new("notes_edit");
+    let focused = ui.ctx().memory(|m| m.has_focus(id));
+    // Focus can leave in the frame before the field is drawn (Escape, a click on a
+    // thumbnail): what was typed is still committed, to the slide it was typed for.
+    let was_focused = ui.ctx().memory(|m| m.had_focus_last_frame(id));
+    if app.notes_buf.0 != uid || app.notes_buf.1 != idx {
+        let (old_uid, old_idx, typed) = std::mem::replace(&mut app.notes_buf, (uid, idx, current.clone()));
+        let old = app.session.active().and_then(|d| d.doc.slides.get(old_idx)).map(|s| s.notes_text());
+        if was_focused && old_uid == uid && old.is_some_and(|o| o != typed) {
+            let _ = app.run("slide.notes", json!({"text": typed, "index": old_idx}));
+        }
+    }
+    if !focused && !was_focused && app.notes_buf.2 != current {
+        app.notes_buf.2 = current.clone();
+    }
+    let mut buf = app.notes_buf.2.clone();
+    let r = ui.add(
+        egui::TextEdit::multiline(&mut buf)
+            .id(id)
+            .hint_text(hint)
+            .frame(egui::Frame::NONE)
+            .desired_width(f32::INFINITY)
+            .desired_rows(2)
+            .font(theme::font(13.0)),
+    );
+    app.notes_buf.2 = buf.clone();
+    if r.lost_focus() && buf != current {
+        let _ = app.run("slide.notes", json!({"text": buf, "index": idx}));
+    }
 }

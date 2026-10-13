@@ -30,7 +30,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         });
 }
 
-fn list(app: &mut SlideApp, ui: &mut Ui) {
+pub(crate) fn list(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
     let doc = st.doc.clone();

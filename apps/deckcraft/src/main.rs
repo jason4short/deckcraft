@@ -1,6 +1,6 @@
 //! DeckCraft desktop app.
 //!
-//! Usage: `deckcraft [--control <port>] [--sample] [--show] [files…]`
+//! Usage: `deckcraft [--control <port>] [--sample] [--show] [--shell classic|canvas] [files…]`
 //!
 //! `--control <port>` (or `DECKCRAFT_CONTROL_PORT`) starts a localhost JSON-lines control server:
 //! `{"id":1,"method":"ui.inspect","params":{}}` → `{"id":1,"ok":true,"result":…}`.
@@ -142,12 +142,14 @@ fn main() -> eframe::Result {
     let mut files = Vec::new();
     let mut sample = false;
     let mut show = false;
+    let mut shell = std::env::var("DECKCRAFT_SHELL").ok();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
             "--sample" => sample = true,
             "--show" => show = true,
+            "--shell" => shell = args.next(),
             "--version" => {
                 println!("deckcraft {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
@@ -212,6 +214,11 @@ fn main() -> eframe::Result {
             if let Some(port) = control_port {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
+            }
+            if let Some(s) = shell.as_deref()
+                && let Err(e) = app.run("view.shell", serde_json::json!({"shell": s}))
+            {
+                log::warn!("--shell: {e}");
             }
             if sample && let Err(e) = deckcraft_engine::sample::open_sample(&mut app.session) {
                 log::error!("sample: {e}");
