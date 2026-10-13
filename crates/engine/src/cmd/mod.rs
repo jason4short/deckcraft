@@ -16,6 +16,7 @@ pub mod shape;
 pub mod slide;
 pub mod table;
 pub mod text;
+pub mod textstyle;
 pub mod transition;
 
 use deckcraft_geom::Xfrm;
@@ -136,6 +137,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(text::specs());
         v.extend(format::specs());
         v.extend(design::specs());
+        v.extend(textstyle::specs());
         v.extend(transition::specs());
         v.extend(animation::specs());
         v.extend(table::specs());

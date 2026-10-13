@@ -131,5 +131,31 @@ fn the_text_style_menu_names_the_style_and_applies_another() {
     let st = h.state_mut().session.execute("format.state", &json!({})).unwrap();
     assert_eq!(st["size"], 20.0);
     assert_eq!(st["fontRef"], "+mn-lt");
-    assert!(h.query_by_label("Text style: Body 3").is_some());
+    assert!(h.query_by_label("Text style: Body 3 (copy)").is_some(), "a title box can't follow a body style: it's a copy");
+}
+
+#[test]
+fn nothing_selected_lists_text_styles_and_edits_one_for_the_deck() {
+    let mut h = harness();
+    let app = h.state_mut();
+    let title = app.session.active().unwrap().current_slide().unwrap().shapes[0].id.0;
+    app.session.execute("text.set", &json!({"id": title, "text": "Pixel Grid"})).unwrap();
+    h.run_steps(3);
+    for name in ["Title", "Body", "Body 2", "Body 3", "Plain text"] {
+        assert!(h.query_by_label(&format!("Edit text style {name}")).is_some(), "{name} is listed");
+    }
+    h.get_by_label("Edit text style Title").click();
+    h.run_steps(3);
+    assert!(h.query_by_label("‹ Text styles").is_some(), "the style's editor is open");
+    h.get_by_label("Italic").click();
+    h.run_steps(3);
+    let app = h.state_mut();
+    app.session.execute("selection.select", &json!({"ids": [title]})).unwrap();
+    let st = app.session.execute("format.state", &json!({})).unwrap();
+    assert_eq!(st["italic"], true, "the title follows its edited style");
+    app.session.execute("edit.deselect", &json!({})).unwrap();
+    h.run_steps(3);
+    h.get_by_label("‹ Text styles").click();
+    h.run_steps(3);
+    assert!(h.query_by_label("Edit text style Title").is_some(), "back to the list");
 }

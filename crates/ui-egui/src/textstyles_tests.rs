@@ -1,4 +1,5 @@
-//! Text styles: read from the master, applied as formatting PPTX stores, in one undo step.
+//! Text styles: read from the deck, applied as a link where PPTX has one (a copy elsewhere),
+//! edited for the whole deck in one undo step.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use deckcraft_engine::Session;
@@ -7,81 +8,116 @@ use serde_json::json;
 use super::*;
 use crate::{Services, SlideApp};
 
-fn app_with_box() -> (SlideApp, u64) {
-    let mut app = SlideApp::new(Session::with_new(), Services::default());
-    let id = app.session.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 300, 100], "text": "Hello"})).unwrap()["id"]
-        .as_u64()
-        .unwrap();
+fn app() -> SlideApp {
+    SlideApp::new(Session::with_new(), Services::default())
+}
+
+fn style(app: &SlideApp, name: &str) -> TextStyle {
+    styles(&app.session.active().unwrap().doc).into_iter().find(|s| s.name == name).unwrap()
+}
+
+fn state(app: &mut SlideApp, id: u64) -> Value {
     app.session.execute("selection.select", &json!({"ids": [id]})).unwrap();
-    (app, id)
+    app.session.execute("format.state", &json!({})).unwrap()
+}
+
+/// The title placeholder of the first slide, with text in it.
+fn title(app: &mut SlideApp) -> u64 {
+    let id = app.session.active().unwrap().current_slide().unwrap().shapes[0].id.0 as u64;
+    app.session.execute("text.set", &json!({"id": id, "text": "Hello"})).unwrap();
+    id
+}
+
+fn text_box(app: &mut SlideApp) -> u64 {
+    app.session.execute("insert.textBox", &json!({"rect": [100, 300, 300, 80], "text": "Box"})).unwrap()["id"].as_u64().unwrap()
 }
 
 #[test]
-fn the_default_master_has_title_and_body_styles() {
-    let (app, _) = app_with_box();
-    let doc = app.session.active().unwrap().doc.clone();
-    let st = styles(&doc);
-    let names: Vec<_> = st.iter().map(|s| s.name).collect();
-    assert_eq!(names, ["Title", "Body", "Body 2", "Body 3", "Plain text"]);
-    let (title, body) = (&st[0], &st[1]);
-    assert!(title.size() > body.size(), "a title is bigger than body text");
-    assert!(st[2].size() <= body.size() && st[3].size() <= st[2].size(), "deeper body levels aren't bigger");
+fn the_deck_has_title_body_levels_and_plain_text() {
+    let a = app();
+    let st = styles(&a.session.active().unwrap().doc);
+    let names: Vec<_> = st.iter().map(|s| (s.name, s.group, s.level)).collect();
+    assert_eq!(names, [("Title", "title", 0), ("Body", "body", 0), ("Body 2", "body", 1), ("Body 3", "body", 2), ("Plain text", "default", 0)]);
+    assert!(st[0].size() > st[1].size() && st[1].size() > st[2].size());
+    assert_eq!(st[0].theme_font(), Some(true), "titles use the theme's heading font");
 }
 
 #[test]
-fn applying_a_style_formats_the_text_in_one_undo_step() {
-    let (mut app, id) = app_with_box();
-    let doc = app.session.active().unwrap().doc.clone();
-    let title = styles(&doc).into_iter().next().unwrap();
-    let undo0 = app.session.active().unwrap().history.undo.len();
-    apply(&mut app, "Text Style: Title", commands(&title));
-    let st = app.session.active().unwrap();
-    assert_eq!(st.history.undo.len(), undo0 + 1, "one undo step");
-    assert_eq!(st.history.undo.last().unwrap().label, "Text Style: Title");
-    let state = app.session.execute("format.state", &json!({})).unwrap();
-    assert_eq!(state["size"], title.size());
-    assert_eq!(matching(&styles(&doc), &state).map(|s| s.name), Some("Title"), "the menu shows the style just applied");
-    if let Some(f) = &title.run.font {
-        assert_eq!(state["fontRef"], f.as_str(), "a theme font stays a reference (+mj-lt)");
-    }
-    app.run("edit.undo", json!({})).unwrap();
-    let text = app.session.execute("text.get", &json!({"id": id})).unwrap();
-    assert_eq!(text["text"], "Hello");
-    let state = app.session.execute("format.state", &json!({})).unwrap();
-    assert_ne!(state["size"], title.size(), "undo takes the whole style off");
+fn applying_title_to_a_title_links_it_and_style_edits_reach_it() {
+    let mut a = app();
+    let id = title(&mut a);
+    a.session.execute("selection.select", &json!({"ids": [id]})).unwrap();
+    a.run("format.font", json!({"family": "Courier New"})).unwrap();
+    let t = style(&a, "Title");
+    assert!(links(&a, &t));
+    apply(&mut a, &t);
+    assert_eq!(state(&mut a, id)["fontRef"], "+mj-lt", "its own formatting is cleared");
+    let st = state(&mut a, id);
+    assert_eq!(current(&a, &styles(&a.session.active().unwrap().doc), &st).as_deref(), Some("Title"));
+    // Edit the style: bold, and the theme heading font.
+    edit_style(&mut a, &t, &Edit::Bold(true));
+    let s = style(&a, "Title");
+    edit_style(&mut a, &s, &Edit::Font("Georgia".into()));
+    let st = state(&mut a, id);
+    assert_eq!((st["bold"].as_bool(), st["font"].as_str()), (Some(true), Some("Georgia")));
 }
 
 #[test]
-fn a_styled_deck_round_trips_through_pptx() {
-    let (mut app, id) = app_with_box();
-    let doc = app.session.active().unwrap().doc.clone();
-    let body2 = styles(&doc).into_iter().nth(2).unwrap();
-    apply(&mut app, "Text Style: Body 2", commands(&body2));
-    let before = app.session.active().unwrap().shape(deckcraft_model::ShapeId(id as u32)).unwrap().text.clone();
-    let data = app.session.execute("file.saveBytes", &json!({"format": "pptx"})).unwrap()["data"].clone();
-    app.session.execute("file.openBytes", &json!({"name": "styled.pptx", "data": data})).unwrap();
-    let back = app.session.active().unwrap().doc.clone();
-    let run = |b: &Option<deckcraft_model::TextBody>| b.as_ref().unwrap().paragraphs[0].runs[0].props.clone();
-    let shape = back.slides[0].shapes.iter().find(|s| s.text.as_ref().is_some_and(|t| t.text() == "Hello")).unwrap();
-    let (a, b) = (run(&before), run(&shape.text));
-    assert_eq!((a.font, a.size, a.bold, a.italic), (b.font, b.size, b.bold, b.italic));
+fn applying_title_to_a_text_box_copies_it_and_style_edits_update_the_copy() {
+    let mut a = app();
+    let boxed = text_box(&mut a);
+    a.session.execute("selection.select", &json!({"ids": [boxed]})).unwrap();
+    let t = style(&a, "Title");
+    assert!(!links(&a, &t), "PPTX can't link a text box to the title style");
+    apply(&mut a, &t);
+    let st = state(&mut a, boxed);
+    assert_eq!(st["size"], t.size());
+    assert_eq!(current(&a, &styles(&a.session.active().unwrap().doc), &st).as_deref(), Some("Title (copy)"));
+    // Editing the style's size updates the copy too, in one undo step, and keeps the selection.
+    a.run("edit.deselect", json!({})).unwrap();
+    let undo0 = a.session.active().unwrap().history.undo.len();
+    let s = style(&a, "Title");
+    edit_style(&mut a, &s, &Edit::Size(50.0));
+    let d = a.session.active().unwrap();
+    assert_eq!(d.history.undo.len(), undo0 + 1);
+    assert!(d.selection.shapes.is_empty(), "the selection is put back");
+    assert_eq!(state(&mut a, boxed)["size"], 50.0, "the copy follows");
+    a.run("edit.undo", json!({})).unwrap();
+    assert_eq!(state(&mut a, boxed)["size"], t.size(), "one undo takes back the style and its copies");
+}
+
+#[test]
+fn plain_text_restyles_text_boxes() {
+    let mut a = app();
+    let boxed = text_box(&mut a);
+    let s = style(&a, "Plain text");
+    edit_style(&mut a, &s, &Edit::Size(23.0));
+    assert_eq!(state(&mut a, boxed)["size"], 23.0);
+}
+
+#[test]
+fn body_levels_set_the_list_level() {
+    let mut a = app();
+    a.run("slide.new", json!({})).unwrap();
+    let body = a.session.active().unwrap().current_slide().unwrap().shapes.iter().find(|s| group_of(s) == Some("body")).unwrap().id.0 as u64;
+    a.session.execute("text.set", &json!({"id": body, "text": "Point"})).unwrap();
+    a.session.execute("selection.select", &json!({"ids": [body]})).unwrap();
+    let s = style(&a, "Body 2");
+    apply(&mut a, &s);
+    let d = a.session.active().unwrap();
+    let level = d.shape(ShapeId(body as u32)).unwrap().text.as_ref().unwrap().paragraphs[0].level;
+    assert_eq!(level, 1);
+    let st = state(&mut a, body);
+    assert_eq!(current(&a, &styles(&a.session.active().unwrap().doc), &st).as_deref(), Some("Body 2"));
 }
 
 #[test]
 fn custom_formatting_matches_no_style() {
-    let (mut app, _) = app_with_box();
-    app.run("format.size", json!({"size": 37.0})).unwrap();
-    let doc = app.session.active().unwrap().doc.clone();
-    let state = app.session.execute("format.state", &json!({})).unwrap();
-    assert!(matching(&styles(&doc), &state).is_none());
-}
-
-#[test]
-fn an_untouched_title_placeholder_shows_the_title_style() {
-    let mut app = SlideApp::new(Session::with_new(), Services::default());
-    let title = app.session.active().unwrap().current_slide().unwrap().shapes[0].id.0;
-    app.session.execute("selection.select", &json!({"ids": [title]})).unwrap();
-    let doc = app.session.active().unwrap().doc.clone();
-    let state = app.session.execute("format.state", &json!({})).unwrap();
-    assert_eq!(matching(&styles(&doc), &state).map(|s| s.name), Some("Title"), "{state}");
+    let mut a = app();
+    let boxed = text_box(&mut a);
+    a.session.execute("selection.select", &json!({"ids": [boxed]})).unwrap();
+    a.run("format.size", json!({"size": 37.0})).unwrap();
+    a.run("format.font", json!({"family": "Courier New"})).unwrap();
+    let st = state(&mut a, boxed);
+    assert_eq!(current(&a, &styles(&a.session.active().unwrap().doc), &st), None);
 }

@@ -27,6 +27,8 @@ pub fn design(app: &mut SlideApp, ui: &mut Ui) {
     let editing = st.selection.text.as_ref().is_some_and(|t| !t.notes);
     let shapes: Vec<deckcraft_model::Shape> = st.selected_shapes().into_iter().cloned().collect();
     if shapes.is_empty() && !editing {
+        text_styles(app, ui);
+        section(ui, "Slide");
         slide(app, ui);
         return;
     }
@@ -319,7 +321,8 @@ fn style_picker(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
     let t = Tokens::get(ui.ctx());
     let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
     let styles = crate::textstyles::styles(&doc);
-    let current = crate::textstyles::matching(&styles, st).map(|s| s.name).unwrap_or("Custom");
+    let current = crate::textstyles::current(app, &styles, st).unwrap_or_else(|| "Custom".into());
+    let current = current.as_str();
     let w = ui.available_width();
     let (r, resp) = ui.allocate_exact_size(vec2(w, 40.0), if en { Sense::click() } else { Sense::hover() });
     ui.painter().rect(
@@ -338,9 +341,13 @@ fn style_picker(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
             let size = (s.size() as f32 * 0.45).clamp(12.0, 26.0);
             let font = if s.bold() { theme::bold(size) } else { theme::font(size) };
             let label = egui::RichText::new(s.name).font(font);
-            if ui.add(egui::Button::selectable(s.name == current, label).min_size(vec2(w.max(220.0) - 12.0, 0.0))).clicked() {
-                let cmds = crate::textstyles::commands(s);
-                crate::textstyles::apply(app, &format!("Text Style: {}", s.name), cmds);
+            let tip = if crate::textstyles::links(app, s) {
+                "Follows the style: editing the style changes this text"
+            } else {
+                "This box can't follow the style in PPTX: its values are copied"
+            };
+            if ui.add(egui::Button::selectable(s.name == current, label).min_size(vec2(w.max(220.0) - 12.0, 0.0))).on_hover_text(tip).clicked() {
+                crate::textstyles::apply(app, s);
                 ui.close();
             }
         }
@@ -508,8 +515,6 @@ fn slide(app: &mut SlideApp, ui: &mut Ui) {
     let layout =
         st.current_slide().and_then(|s| st.doc.masters.first().and_then(|m| m.layouts.iter().find(|l| l.id == s.layout))).map(|l| l.name.clone());
     let t = Tokens::get(ui.ctx());
-    ui.label(egui::RichText::new("Slide").font(theme::bold(13.0)).color(t.text));
-    ui.add_space(4.0);
     caption(ui, "Layout");
     let w = ui.available_width();
     let r =
@@ -517,6 +522,159 @@ fn slide(app: &mut SlideApp, ui: &mut Ui) {
     egui::Popup::menu(&r).width(420.0).show(|ui| crate::ribbon::layout_menu(app, ui, "slide.layout"));
     section(ui, "Background");
     crate::panes::background(app, ui);
+}
+
+// ----- Text styles (nothing selected) ------------------------------------------------------
+
+/// Which text style the panel is editing (an index into `textstyles::styles`), if any.
+fn editing_style_id() -> egui::Id {
+    egui::Id::new("canvas-inspector-editing-style")
+}
+
+pub fn edit_text_style(ctx: &egui::Context, index: Option<usize>) {
+    ctx.data_mut(|d| d.insert_temp(editing_style_id(), index));
+}
+
+/// The deck's text styles: click one to edit it for the whole deck.
+fn text_styles(app: &mut SlideApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
+    let styles = crate::textstyles::styles(&doc);
+    let editing: Option<usize> = ui.ctx().data(|d| d.get_temp(editing_style_id())).flatten();
+    if let Some(s) = editing.and_then(|k| styles.get(k)) {
+        style_editor(app, ui, &doc, s);
+        return;
+    }
+    ui.label(egui::RichText::new("Text styles").font(theme::bold(13.0)).color(t.text));
+    ui.add_space(4.0);
+    let w = ui.available_width();
+    for (k, s) in styles.iter().enumerate() {
+        let size = (s.size() as f32 * 0.42).clamp(12.0, 22.0);
+        let (r, resp) = ui.allocate_exact_size(vec2(w, size + 24.0), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
+        }
+        let font = if s.bold() { theme::bold(size) } else { theme::font(size) };
+        ui.painter().text(pos2(r.min.x + 8.0, r.min.y + 4.0), Align2::LEFT_TOP, s.name, font, t.text);
+        let detail = format!("{} · {} pt{}", s.family(&doc), widgets::fmt_num(s.size(), ""), if s.bold() { " · Bold" } else { "" });
+        ui.painter().text(pos2(r.min.x + 8.0, r.max.y - 4.0), Align2::LEFT_BOTTOM, detail, theme::font(11.0), t.text_dim);
+        widgets::chevron(ui.painter(), pos2(r.max.x - 12.0, r.center().y), 3.0, t.text_faint);
+        let label = format!("Edit text style {}", s.name);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+        if resp.on_hover_text("Edit this style for the whole presentation").clicked() {
+            edit_text_style(ui.ctx(), Some(k));
+        }
+    }
+}
+
+/// Edit one style; every change applies to the whole presentation.
+fn style_editor(app: &mut SlideApp, ui: &mut Ui, doc: &deckcraft_model::Presentation, s: &crate::textstyles::TextStyle) {
+    use crate::textstyles::Edit;
+    let t = Tokens::get(ui.ctx());
+    if ui.add(egui::Button::new("‹ Text styles").frame(false)).clicked() {
+        edit_text_style(ui.ctx(), None);
+    }
+    ui.add_space(2.0);
+    let size = (s.size() as f32 * 0.5).clamp(14.0, 28.0);
+    ui.label(egui::RichText::new(s.name).font(if s.bold() { theme::bold(size) } else { theme::font(size) }).color(t.text));
+    let n = crate::textstyles::copies(doc, s).len();
+    let reach = match n {
+        0 => format!("Changes all {} text in this presentation.", s.name),
+        1 => format!("Changes all {} text, and 1 copy of it.", s.name),
+        n => format!("Changes all {} text, and {n} copies of it.", s.name),
+    };
+    caption(ui, &reach);
+    ui.add_space(6.0);
+    let family = s.family(doc);
+    let w = ui.available_width();
+    caption(ui, "Font");
+    let families = crate::ribbon::font_families(app);
+    let mut edits: Vec<Edit> = vec![];
+    widgets::dropdown(ui, "style-font", &family, w, true, |ui| {
+        for f in families {
+            if ui.selectable_label(f == family, &f).clicked() {
+                edits.push(Edit::Font(f));
+                ui.close();
+            }
+        }
+    });
+    match s.theme_font() {
+        Some(true) => caption(ui, "The theme's heading font: every style and shape in it changes too."),
+        Some(false) => caption(ui, "The theme's body font: every style and shape in it changes too."),
+        None => {}
+    }
+    ui.add_space(4.0);
+    let half = (w - 8.0) / 2.0;
+    let (base, weights, cur) = weights(&family, s.bold());
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(half);
+            caption(ui, "Weight");
+            widgets::dropdown(ui, "style-weight", &cur, half, true, |ui| {
+                for wname in &weights {
+                    if ui.selectable_label(*wname == cur, wname).clicked() {
+                        match wname.as_str() {
+                            "Regular" | "Bold" => {
+                                // From a named weight family back to the base family.
+                                if family != base {
+                                    edits.push(Edit::Font(base.clone()));
+                                }
+                                edits.push(Edit::Bold(wname == "Bold"));
+                            }
+                            other => {
+                                edits.push(Edit::Font(format!("{base} {other}")));
+                                edits.push(Edit::Bold(false));
+                            }
+                        }
+                        ui.close();
+                    }
+                }
+            });
+        });
+        ui.vertical(|ui| {
+            caption(ui, "Size");
+            if let Some(v) = widgets::spinner(ui, "style-size", s.size(), 1.0, " pt", half - 14.0) {
+                edits.push(Edit::Size(v.clamp(1.0, 4000.0)));
+            }
+        });
+    });
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(half);
+            caption(ui, "Line height");
+            let pct = match s.line_spacing {
+                Some(deckcraft_model::text::Spacing::Pct(v)) => v * 100.0,
+                _ => 100.0,
+            };
+            if let Some(v) = widgets::spinner(ui, "style-lh", pct.round(), 5.0, "%", half - 14.0) {
+                edits.push(Edit::LineSpacing((v / 100.0).clamp(0.1, 9.99)));
+            }
+        });
+        ui.vertical(|ui| {
+            caption(ui, "Style");
+            if seg(ui, Icon::Italic, "Italic", s.italic(), true).clicked() {
+                edits.push(Edit::Italic(!s.italic()));
+            }
+        });
+    });
+    ui.add_space(4.0);
+    caption(ui, "Color");
+    let sc = scheme(app);
+    let swatch = match &s.run.fill {
+        Some(Fill::Solid { color }) => Some(theme::to_color32(color.resolve(&sc, None))),
+        _ => Some(t_auto(ui)),
+    };
+    if let Some(Some(c)) = color_field(app, ui, "Text color", swatch, None) {
+        edits.push(Edit::Color(c));
+    }
+    if !edits.is_empty() {
+        let mut cmds = vec![];
+        for e in &edits {
+            cmds.extend(crate::textstyles::edit_commands(app, s, e));
+        }
+        app.run_as_one(&format!("Edit Text Style: {}", s.name), cmds);
+    }
 }
 
 #[cfg(test)]

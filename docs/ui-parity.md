@@ -176,15 +176,19 @@ transparency (`shape.fill {transparency}`) or the picture's (`picture.adjust {tr
 outlines and text keep their own colour's transparency. Letter spacing offers presets because
 `format.state` doesn't report the current value.
 
-Text styles (`crates/ui-egui/src/textstyles.rs`) are the deck's own: Title (the master's title
-style), Body, Body 2 and Body 3 (its body style's first three levels) and Plain text (its other
-style), each over the presentation's default text style. Applying one sets the selected text's font
-(theme references such as `+mj-lt` stay references), size, bold, italic, colour and line spacing
-with the formatting commands, as one undo step ("Text Style: Body"), so the PPTX holds ordinary run
-formatting. The menu names the style the selection matches (same font, size and weight, or the only
-style in its theme font: a title a layout enlarges is still a Title), else "Custom". Known gap
-(engine, both layouts): formatting an empty placeholder doesn't stick, since the engine formats runs
-and an empty placeholder has none.
+Text styles (`crates/ui-egui/src/textstyles.rs`) are the deck's own inherited styles: Title (the
+master's title style), Body, Body 2 and Body 3 (its body style's first three levels) and Plain text
+(the presentation's default text style, which text boxes inherit). With nothing selected the
+inspector lists them; click one to edit its font, weight, size, line height, italic and colour for
+the whole presentation (`master.textStyle`, one undo step). A theme font (`+mj-lt` / `+mn-lt`) is
+changed in the theme (`design.fonts`), so every style and shape in it follows. Size and line height
+leave layouts that set their own alone (the title slide's 60 pt title), as PowerPoint does; font,
+weight, italic and colour clear layout overrides (`layouts: true`). Applying a style to text whose
+box inherits it clears the text's own formatting (`format.clear`, and the list level for Body 2 and
+3), so it follows the style ("Title" in the menu). Elsewhere PPTX has no link, so the values are
+copied ("Title (copy)"), and editing the style also updates text whose formatting still matches its
+old values. Known gap (engine, both layouts): formatting an empty placeholder doesn't stick, since
+the engine formats runs and an empty placeholder has none.
 
 States (`crates/ui-egui/src/states.rs`, the Animate tab) are slides joined by the Morph transition:
 consecutive slides whose later ones enter with Morph are the states of one animation, and Morph
