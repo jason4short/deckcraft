@@ -158,8 +158,9 @@ imitate Microsoft's. No pixel comparison against PowerPoint screenshots has been
 
 A second window layout beside the PowerPoint-style one, for people who prefer a canvas-first
 editor. Choose it in Preferences (Layout: Ribbon / Canvas), with `view.shell {shell: canvas}`, the
-control channel's `ui.set {shell}`, or `deckcraft --shell canvas` (`DECKCRAFT_SHELL`). The ribbon
-stays the default. Both layouts drive the same commands, so files, undo and PPTX output don't change
+control channel's `ui.set {shell}`, or `deckcraft --shell canvas` (`DECKCRAFT_SHELL`). The desktop
+app opens in the canvas layout until a layout is saved in its settings; the library (tests, the web
+build) keeps the ribbon as its default. Both layouts drive the same commands, so files, undo and PPTX output don't change
 with the layout (`crates/ui-egui/src/canvas_shell.rs`).
 
 | Part | Landed (phases 1–5) | Later |

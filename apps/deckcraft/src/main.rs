@@ -1,6 +1,6 @@
 //! DeckCraft desktop app.
 //!
-//! Usage: `deckcraft [--control <port>] [--sample] [--show] [--shell classic|canvas] [files…]`
+//! Usage: `deckcraft [--control <port>] [--sample] [--show] [--shell canvas|classic] [files…]`
 //!
 //! `--control <port>` (or `DECKCRAFT_CONTROL_PORT`) starts a localhost JSON-lines control server:
 //! `{"id":1,"method":"ui.inspect","params":{}}` → `{"id":1,"ok":true,"result":…}`.
@@ -60,10 +60,17 @@ fn load_prefs(app: &mut SlideApp) {
     if std::env::var_os("DECKCRAFT_NO_PREFS").is_some() {
         return;
     }
+    // The app opens in the canvas layout until a layout is saved (the library's default stays the
+    // ribbon, which the tests and the web build use).
+    app.ui.shell = deckcraft_ui_egui::Shell::Canvas;
     if let Some(p) = prefs_path()
         && let Ok(bytes) = std::fs::read(&p)
-        && let Ok(ui) = serde_json::from_slice::<deckcraft_ui_egui::UiState>(&bytes)
+        && let Ok(mut ui) = serde_json::from_slice::<deckcraft_ui_egui::UiState>(&bytes)
     {
+        let saved_shell = serde_json::from_slice::<serde_json::Value>(&bytes).is_ok_and(|v| v.get("shell").is_some());
+        if !saved_shell {
+            ui.shell = deckcraft_ui_egui::Shell::Canvas;
+        }
         app.ui = ui;
     }
     if let Some(p) = prefs_path().map(|p| p.with_file_name("prefs.json"))
