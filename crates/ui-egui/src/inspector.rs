@@ -227,7 +227,10 @@ fn slide(app: &mut SlideApp, ui: &mut Ui) {
     let hide = st.current_slide().map(|s| !s.show_master_shapes).unwrap_or(false);
     let own = st.current_slide().and_then(|s| s.background.clone());
     let full = cols(ui) * 2.0 + GAP;
-    crate::props::section(ui, "Slide", false, &[]);
+    // Reset: the slide's placeholders back on their layout's positions, sizes and formatting.
+    if crate::props::section(ui, "Slide", false, &[(Icon::Revert, "Reset slide to its layout")]) == Some(0) {
+        run(app, "slide.reset", json!({}));
+    }
     caption(ui, "Layout");
     pick_wide(ui, "Layout", &layout.unwrap_or_else(|| "Layout".into()), full, 420.0, true, |ui| crate::ribbon::layout_menu(app, ui, "slide.layout"));
     background_editor(app, ui, own, Some("Follow the layout"), true, Some(hide));

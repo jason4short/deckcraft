@@ -130,3 +130,25 @@ fn slide_master_view_edits_the_master_and_layouts() {
     assert!(m(&h).layouts[1].background.is_some());
     assert!(m(&h).background != m(&h).layouts[1].background, "the master keeps its own");
 }
+
+#[test]
+fn the_slide_section_resets_the_slide() {
+    let mut app = SlideApp::new(Session::with_new(), Services::default());
+    app.run("view.shell", json!({"shell": "canvas"})).unwrap();
+    let title = app.session.active().unwrap().current_slide().unwrap().shapes[0].id.0;
+    app.run("selection.select", json!({"ids": [title]})).unwrap();
+    app.run("shape.move", json!({"x": 40})).unwrap();
+    app.run("slide.go", json!({"index": 0})).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1400.0)).build_ui_state(
+        |ui, app: &mut SlideApp| {
+            app.logic(ui.ctx());
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(3);
+    h.get_by_label("Reset slide to its layout").click();
+    h.run_steps(3);
+    let st = h.state().session.active().unwrap();
+    assert!(st.current_slide().unwrap().shapes.iter().find(|s| s.id.0 == title).is_none_or(|s| s.xfrm.is_none()), "the title follows its layout");
+}
