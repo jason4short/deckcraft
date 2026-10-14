@@ -42,12 +42,6 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
 
     header_row(app, ui, &sh, multi, shapes.len());
     position(app, ui, &x, &boxes);
-    if !multi
-        && let Some(kind) = sh.ph_type()
-        && app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides)
-    {
-        every_slide(app, ui, &sh, kind);
-    }
     layout(app, ui, &sh, &x, &boxes, texty && !multi);
     appearance(app, ui, &shapes, &boxes);
     if texty {
@@ -373,6 +367,14 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
                 }
                 let r = icon_button(ui, Icon::Link, "Link", enabled(app, "insert.hyperlink"));
                 egui::Popup::menu(&r).width(260.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| link_field(app, ui));
+                // A slide's placeholder: back to its layout's position and size.
+                if target == Some(deckcraft_engine::Target::Slides) && sh.ph.is_some() {
+                    let moved = sh.xfrm.is_some();
+                    let tip = if moved { "Reset to layout" } else { "Reset to layout (it's where its layout has it)" };
+                    if icon_button(ui, Icon::Revert, tip, moved).clicked() {
+                        run(app, "placeholder.reset", json!({"ids": [sh.id]}));
+                    }
+                }
                 if target.is_some() && matches!(sh.kind, ShapeKind::Shape) {
                     let r = icon_button(ui, Icon::Tag, "Placeholder: what this box is on the slide's layout", true);
                     egui::Popup::menu(&r).width(220.0).show(|ui| placeholder_menu(app, ui, sh));
@@ -649,37 +651,6 @@ pub fn kind_name(xml: &str, plural: bool) -> String {
     if plural { many.into() } else { one.into() }
 }
 
-/// A placeholder's place across the deck: how many of its kind were moved off their layout,
-/// putting them all back, and making this one's position the layout's for every slide.
-fn every_slide(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, kind: deckcraft_model::PhType) {
-    let many = kind_name(kind.xml(), true);
-    let moved = app.moved_placeholders();
-    let same = |k: &str| {
-        let t = deckcraft_model::PhType::from_xml(k);
-        t == kind || (t.is_title() && kind.is_title())
-    };
-    let n = moved.iter().filter(|m| same(&m.2)).count();
-    let this_moved = moved.iter().any(|m| m.1 == sh.id.0);
-    let w = cols(ui);
-    let t = Tokens::get(ui.ctx());
-    let button = |ui: &mut Ui, label: String, en: bool| {
-        let b = egui::Button::new(egui::RichText::new(label).font(theme::font(12.5))).fill(t.field).corner_radius(CornerRadius::same(6)).truncate();
-        ui.add_enabled_ui(en, |ui| ui.add_sized(vec2(w, ROW_H), b)).inner
-    };
-    caption(ui, &format!("Every slide's {many}"));
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = GAP;
-        let reset = button(ui, if n > 0 { format!("Reset {n}") } else { "None moved".into() }, n > 0);
-        if reset.on_hover_text(format!("Put the {many} moved on any slide back where their layout has them")).clicked() {
-            run(app, "placeholder.reset", json!({"kind": kind.xml()}));
-        }
-        let to = button(ui, "Apply to all".into(), this_moved);
-        if to.on_hover_text(format!("Make this the layout's position, so the {many} on every slide with this layout line up here")).clicked() {
-            run(app, "placeholder.toLayout", json!({"id": sh.id}));
-        }
-    });
-}
-
 /// The gaps between neighbouring layers left to right (`horizontal`) or top to bottom, in points.
 pub fn gaps(boxes: &[(ShapeId, Xfrm)], horizontal: bool) -> Vec<f64> {
     let sorted = sorted_boxes(boxes, horizontal);
@@ -741,13 +712,7 @@ pub fn resizing_of(sh: &Shape) -> Resizing {
 }
 
 fn layout(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, x: &Xfrm, boxes: &[(ShapeId, Xfrm)], texty: bool) {
-    // A placeholder with a position or size of its own: a button putting it back on its layout's.
-    let on_slide = app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides);
-    let placed = on_slide && sh.ph.is_some() && sh.xfrm.is_some() && boxes.len() <= 1;
-    let actions: &[(Icon, &str)] = if placed { &[(Icon::Revert, "Reset to the layout's position and size")] } else { &[] };
-    if section(ui, "Layout", false, actions) == Some(0) {
-        run(app, "placeholder.reset", json!({"ids": [sh.id]}));
-    }
+    section(ui, "Layout", false, &[]);
     let c = cols(ui);
     if texty && sh.text.is_some() {
         caption(ui, "Resizing");
