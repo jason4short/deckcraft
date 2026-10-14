@@ -25,19 +25,26 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |_| {});
         return;
     }
-    sidebar(app, ui);
-    inspector(app, ui);
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| match app.ui.view {
-        ViewMode::Sorter => crate::sorter::show(app, ui),
-        ViewMode::NotesPage => crate::sorter::notes_page(app, ui),
-        ViewMode::Normal | ViewMode::Outline | ViewMode::Reading => {
-            toolbar(app, ui);
-            if app.ui.notes {
-                notes_card(app, ui);
+    if !app.ui.hide_left {
+        sidebar(app, ui);
+    }
+    if !app.ui.hide_right {
+        inspector(app, ui);
+    }
+    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+        match app.ui.view {
+            ViewMode::Sorter => crate::sorter::show(app, ui),
+            ViewMode::NotesPage => crate::sorter::notes_page(app, ui),
+            ViewMode::Normal | ViewMode::Outline | ViewMode::Reading => {
+                toolbar(app, ui);
+                if app.ui.notes {
+                    notes_card(app, ui);
+                }
+                states_strip(app, ui);
+                crate::canvas::show(app, ui);
             }
-            states_strip(app, ui);
-            crate::canvas::show(app, ui);
         }
+        hidden_panel_buttons(app, ui);
     });
 }
 
@@ -113,6 +120,33 @@ fn sidebar(app: &mut SlideApp, ui: &mut Ui) {
         });
 }
 
+/// While a side panel is hidden, a button in that top corner of the canvas brings it back.
+fn hidden_panel_buttons(app: &mut SlideApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let area = ui.max_rect();
+    for (left, hidden) in [(true, app.ui.hide_left), (false, app.ui.hide_right)] {
+        if !hidden {
+            continue;
+        }
+        let at = if left { pos2(area.min.x + 10.0, area.min.y + 10.0) } else { pos2(area.max.x - 42.0, area.min.y + 10.0) };
+        let r = Rect::from_min_size(at, vec2(32.0, 32.0));
+        let resp = ui.interact(r, ui.id().with(("show-panel", left)), Sense::click());
+        let p = ui.painter();
+        p.add(egui::epaint::Shadow { offset: [0, 1], blur: 6, spread: 0, color: t.shadow }.as_shape(r, CornerRadius::same(8)));
+        p.rect(r, CornerRadius::same(8), if resp.hovered() { t.hover } else { t.card }, Stroke::new(1.0, t.card_border), egui::StrokeKind::Inside);
+        icons::paint_mono(p, r.shrink(8.0), if left { Icon::PanelLeft } else { Icon::PanelRight }, t.text, false);
+        let tip = if left { "Show the left panel (⌥⌘.)" } else { "Show the design panel (⌘.)" };
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
+        if resp.on_hover_text(tip).clicked() {
+            if left {
+                app.ui.hide_left = false;
+            } else {
+                app.ui.hide_right = false;
+            }
+        }
+    }
+}
+
 /// Name and folder of the presentation, and the slide / grid view switch.
 fn header(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
@@ -130,6 +164,9 @@ fn header(app: &mut SlideApp, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
+                if icon_toggle(ui, Icon::PanelLeft, "Hide the left panel (⌥⌘.)", true, false).clicked() {
+                    app.ui.hide_left = true;
+                }
                 let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
                 let tip = if in_master { "Close slide masters" } else { "Edit slide masters and layouts" };
                 if icon_toggle(ui, Icon::SlideMaster, tip, true, in_master).clicked() {

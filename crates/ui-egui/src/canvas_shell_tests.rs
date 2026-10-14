@@ -239,3 +239,27 @@ fn the_sidebar_opens_and_closes_the_slide_masters() {
     h.run_steps(3);
     assert_eq!(target(&h), deckcraft_engine::Target::Slides);
 }
+
+#[test]
+fn command_period_hides_the_side_panels_and_buttons_bring_them_back() {
+    let mut h = harness(Shell::Canvas);
+    let key = |h: &mut Harness<'static, SlideApp>, alt: bool| {
+        let modifiers = egui::Modifiers { mac_cmd: true, command: true, alt, ..Default::default() };
+        h.event(egui::Event::Key { key: egui::Key::Period, physical_key: None, pressed: true, repeat: false, modifiers });
+        h.event(egui::Event::Key { key: egui::Key::Period, physical_key: None, pressed: false, repeat: false, modifiers });
+        h.run_steps(3);
+    };
+    key(&mut h, false);
+    assert!(h.state().ui.hide_left && h.state().ui.hide_right, "⌘. hides both");
+    assert!(h.query_by_label("Layers").is_none());
+    key(&mut h, false);
+    assert!(!h.state().ui.hide_left && !h.state().ui.hide_right, "and shows them again");
+    key(&mut h, true);
+    assert!(h.state().ui.hide_left && !h.state().ui.hide_right, "⌥⌘. hides the left one");
+    h.get_by_label("Show the left panel (⌥⌘.)").click();
+    h.run_steps(3);
+    assert!(!h.state().ui.hide_left);
+    h.get_by_label("Hide the left panel (⌥⌘.)").click();
+    h.run_steps(3);
+    assert!(h.state().ui.hide_left, "the sidebar's own button hides it");
+}

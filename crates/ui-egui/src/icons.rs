@@ -306,6 +306,9 @@ icons! {
     TextTop => "text-top",
     TextMiddle => "text-middle",
     TextBottom => "text-bottom",
+    /// A window with its left (or right) column marked: show or hide that side panel.
+    PanelLeft => "panel-left",
+    PanelRight => "panel-right",
     /// A circular arrow: put back as it was (a placeholder onto its layout's position).
     Revert => "revert",
     /// A slide on an easel: a presentation (document tabs).
@@ -2346,6 +2349,11 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.seg((4.0, 9.0), (7.0, 10.0), K);
             p.seg((15.0, 20.0), (14.0, 17.0), K);
             p.seg((20.0, 15.0), (17.0, 14.0), K);
+        }
+        I::PanelLeft | I::PanelRight => {
+            p.rect(3.5, 5.0, 20.5, 19.0, 2.0, N, K);
+            let x = if matches!(icon, I::PanelLeft) { 9.0 } else { 15.0 };
+            p.seg((x, 5.0), (x, 19.0), K);
         }
         I::Revert => {
             // Three quarters of a circle, from the left over the top round to the bottom, with
