@@ -111,6 +111,9 @@ fn slide_master_view_edits_the_master_and_layouts() {
     for label in ["Theme colors", "Theme fonts", "Background", "Theme color accent1"] {
         assert!(h.query_by_label(label).is_some(), "{label}");
     }
+    for label in ["Apply to all", "Hide background graphics", "Layout"] {
+        assert!(h.query_by_label(label).is_none(), "the master has no {label}");
+    }
     // A theme colour typed as hex.
     h.state_mut().run("design.colors", json!({"colors": {"accent1": "#123456"}})).unwrap();
     let m = |h: &Harness<'static, SlideApp>| h.state().session.active().unwrap().doc.masters[0].clone();
@@ -119,6 +122,7 @@ fn slide_master_view_edits_the_master_and_layouts() {
     h.state_mut().run("view.slideMaster", json!({"master": 0, "layout": 1})).unwrap();
     h.run_steps(3);
     assert!(h.query_by_label("Hide background graphics").is_some());
+    assert!(h.query_by_label("Apply to all").is_none(), "slides-only");
     h.get_by_label("Hide background graphics").click();
     h.run_steps(3);
     assert!(!m(&h).layouts[1].show_master_shapes);
