@@ -192,6 +192,46 @@ pub fn apply(app: &mut SlideApp, style: &TextStyle) {
     run_on_text(app, &format!("Text Style: {}", style.name), cmds);
 }
 
+/// Update `style` to the selected text's type (font, weight, size, italic, line height), as the
+/// style editor would, then let the text follow it: one undo step. Colour stays the text's own.
+pub fn update_from_selection(app: &mut SlideApp, style: &TextStyle) {
+    let st = crate::ribbon::fmt_state(app);
+    let mut edits = vec![];
+    if let Some(f) = st.get("font").and_then(Value::as_str).filter(|f| !f.is_empty()) {
+        edits.push(Edit::Font(f.to_string()));
+    }
+    if let Some(size) = st.get("size").and_then(Value::as_f64) {
+        edits.push(Edit::Size(size));
+    }
+    edits.push(Edit::Bold(st.get("bold").and_then(Value::as_bool).unwrap_or(false)));
+    edits.push(Edit::Italic(st.get("italic").and_then(Value::as_bool).unwrap_or(false)));
+    if let Some(v) =
+        st.get("lineSpacing").filter(|v| v.get("kind").and_then(Value::as_str) == Some("pct")).and_then(|v| v.get("v")).and_then(Value::as_f64)
+    {
+        edits.push(Edit::LineSpacing(v));
+    }
+    let before = app.session.active().map(|d| d.history.undo.len()).unwrap_or(0);
+    let mut cmds = vec![];
+    for e in &edits {
+        cmds.extend(edit_commands(app, style, e));
+    }
+    app.run_as_one("Update Text Style", cmds);
+    // The style changed: look it up again before applying it.
+    let fresh = app.session.active().map(|d| d.doc.clone()).and_then(|doc| styles(&doc).into_iter().find(|s| s.name == style.name));
+    apply(app, fresh.as_ref().unwrap_or(style));
+    if let Some(st) = app.session.active_mut() {
+        let undo = &mut st.history.undo;
+        if undo.len() > before + 1 {
+            undo.truncate(before + 1);
+        }
+        if undo.len() > before
+            && let Some(e) = undo.last_mut()
+        {
+            e.label = format!("Update Text Style: {}", style.name);
+        }
+    }
+}
+
 /// Detach the selected text from `style`: text that follows it by inheritance gets the style's
 /// values of its own (keeping its colour), so editing the style no longer changes it; copied
 /// values stay as they are. Either way the panel then shows every type control for it.

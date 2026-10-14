@@ -279,10 +279,19 @@ pub(crate) fn style_menu(app: &mut SlideApp, button: &egui::Response, current: &
                 "This box can't follow the style in PPTX: its values are copied"
             };
             let on = current == s.name || current.strip_suffix(" (copy)") == Some(s.name);
-            if ui.add(egui::Button::selectable(on, label).min_size(vec2(w - 12.0, 0.0))).on_hover_text(tip).clicked() {
-                crate::textstyles::apply(app, s);
-                ui.close();
-            }
+            ui.horizontal(|ui| {
+                let update_w = 64.0;
+                if ui.add(egui::Button::selectable(on, label).min_size(vec2(w - 20.0 - update_w, 0.0))).on_hover_text(tip).clicked() {
+                    crate::textstyles::apply(app, s);
+                    ui.close();
+                }
+                // Make the style match the selected text, which then follows it.
+                let r = ui.add_sized(vec2(update_w, 22.0), egui::Button::new(egui::RichText::new("Update").font(theme::font(12.0))));
+                if r.on_hover_text(format!("Update {} to match the selected text", s.name)).clicked() {
+                    crate::textstyles::update_from_selection(app, s);
+                    ui.close();
+                }
+            });
         }
     });
 }

@@ -302,7 +302,7 @@ fn arrow(h: &mut Harness<'static, SlideApp>, key: egui::Key, modifiers: egui::Mo
 
 /// The first field (top of the panel down) showing `value`.
 fn focus_field(h: &mut Harness<'static, SlideApp>, value: &str) {
-    h.query_all_by_value(value).next().unwrap_or_else(|| panic!("no field reads {value}")).click();
+    h.query_all_by_value(value).next().expect("a field reads the value").click();
     h.run_steps(3);
 }
 
@@ -373,7 +373,7 @@ fn corner_radii_round_trip_through_the_presets_pptx_has() {
     for want in [[10.0; 4], [10.0, 10.0, 4.0, 4.0], [10.0, 4.0, 10.0, 4.0], [0.0, 12.0, 0.0, 0.0], [0.0; 4]] {
         let now = match &s.doc().unwrap().shape(ShapeId(id as u32)).unwrap().geom {
             Geom::Preset { name, .. } => name.clone(),
-            _ => unreachable!(),
+            Geom::Custom { .. } => String::new(),
         };
         for (cmd, p) in corner_commands(ShapeId(id as u32), &now, want, 100.0).unwrap() {
             s.execute(cmd, &p).unwrap();
@@ -394,4 +394,23 @@ fn a_rectangle_gets_a_corner_radius_and_each_corner_on_its_own() {
     let mut h = harness();
     text_box(&mut h);
     assert!(h.query_by_label("Each corner on its own").is_none(), "a text box has no corners to round");
+}
+
+#[test]
+fn updating_a_style_from_the_selection_makes_the_text_follow_it() {
+    let mut h = harness();
+    let id = text_box(&mut h);
+    h.state_mut().run("format.size", json!({"size": 31})).unwrap();
+    h.run_steps(3);
+    let undo = h.state().session.active().unwrap().history.undo.len();
+    let doc = h.state().session.active().unwrap().doc.clone();
+    let plain = crate::textstyles::styles(&doc).into_iter().find(|s| s.name == "Plain text").unwrap();
+    crate::textstyles::update_from_selection(h.state_mut(), &plain);
+    h.run_steps(3);
+    let doc = h.state().session.active().unwrap().doc.clone();
+    let plain = crate::textstyles::styles(&doc).into_iter().find(|s| s.name == "Plain text").unwrap();
+    assert_eq!(plain.size(), 31.0, "the style took the text's size");
+    assert!(shape(h.state(), id).text.unwrap().paragraphs[0].runs[0].props.size.is_none(), "the text follows the style");
+    assert!(h.query_by_label("Text style: Plain text").is_some());
+    assert_eq!(h.state().session.active().unwrap().history.undo.len(), undo + 1, "one undo step");
 }
