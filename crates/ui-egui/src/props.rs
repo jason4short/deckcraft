@@ -130,6 +130,16 @@ pub(crate) fn caption(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text).font(theme::font(11.0)).color(t.caption));
 }
 
+/// A field's hover outline and focus ring (from FigCraft): drawn over field `r` after its contents.
+pub(crate) fn field_frame(ui: &Ui, r: Rect, focused: bool) {
+    let t = Tokens::get(ui.ctx());
+    if focused {
+        ui.painter().rect_stroke(r, CornerRadius::same(6), Stroke::new(1.5, t.focus), egui::StrokeKind::Inside);
+    } else if ui.rect_contains_pointer(r) {
+        ui.painter().rect_stroke(r, CornerRadius::same(6), Stroke::new(1.0, t.field_hover_border), egui::StrokeKind::Inside);
+    }
+}
+
 pub(crate) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, en: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), if en { Sense::click() } else { Sense::hover() });
@@ -302,6 +312,7 @@ fn number_or_mixed(
             .interactive(en)
             .id(edit_id),
     );
+    field_frame(ui, r, te.has_focus());
     if te.has_focus() {
         ui.data_mut(|d| d.insert_temp(tkey, text.clone()));
     } else {
@@ -333,7 +344,10 @@ pub(crate) fn pick(ui: &mut Ui, id: &str, label: &str, width: f32, en: bool, add
 pub(crate) fn pick_wide(ui: &mut Ui, id: &str, label: &str, width: f32, menu_w: f32, en: bool, add: impl FnOnce(&mut Ui)) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(width, ROW_H), if en { Sense::click() } else { Sense::hover() });
-    ui.painter().rect_filled(r, CornerRadius::same(6), if en && resp.hovered() { t.hover } else { t.field });
+    ui.painter().rect_filled(r, CornerRadius::same(6), t.field);
+    if en {
+        field_frame(ui, r, false);
+    }
     let text_r = Rect::from_min_max(pos2(r.min.x + 8.0, r.min.y), pos2(r.max.x - 22.0, r.max.y));
     ui.painter().with_clip_rect(text_r).text(
         pos2(text_r.min.x, r.center().y),
@@ -1285,6 +1299,7 @@ pub(crate) fn color_row(
                 .text_color(t.text)
                 .id(ui.id().with((id, "hexedit"))),
         );
+        field_frame(ui, r, te.has_focus());
         if te.has_focus() {
             ui.data_mut(|d| d.insert_temp(tkey, text.clone()));
         } else {

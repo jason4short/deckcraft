@@ -341,20 +341,6 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
             out = Some(Some(ColorRef::rgb(Rgba { a: 255, ..p.color })));
         }
     }
-    // "More Colors…": a hex field.
-    let id = ui.id().with("hex");
-    let mut hex: String = ui.data_mut(|d| d.get_temp::<String>(id).unwrap_or_default());
-    ui.horizontal(|ui| {
-        ui.label("More Colors… #");
-        let r = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(70.0).hint_text("RRGGBB"));
-        if r.lost_focus()
-            && ui.input(|i| i.key_pressed(egui::Key::Enter))
-            && let Some(c) = Rgba::from_hex(&hex)
-        {
-            out = Some(Some(ColorRef::rgb(c)));
-        }
-    });
-    ui.data_mut(|d| d.insert_temp(id, hex));
     if out.is_some() {
         ui.close();
     }
@@ -585,10 +571,13 @@ mod tests {
         });
         harness.get_by_label("Pick").click();
         harness.run();
-        harness.get_by_role(Role::TextInput).click();
+        // The picker's Hex field.
+        harness.query_all_by_role(Role::TextInput).next().expect("a hex field").click();
         harness.run();
         assert!(harness.query_by_role(Role::TextInput).is_some(), "the menu is still open after clicking the hex field");
-        harness.get_by_role(Role::TextInput).type_text("00FF00");
+        let cmd = egui::Modifiers { command: true, mac_cmd: true, ..Default::default() };
+        harness.key_press_modifiers(cmd, egui::Key::A);
+        harness.query_all_by_role(Role::TextInput).next().expect("a hex field").type_text("00FF00");
         harness.run();
         harness.key_press(egui::Key::Enter);
         harness.run();

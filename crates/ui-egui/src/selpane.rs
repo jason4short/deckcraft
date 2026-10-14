@@ -272,11 +272,7 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
         app.selpane.drag = Some((dragged, target));
         if let Some((_, y)) = target {
             let (x0, x1) = (ui.min_rect().left(), ui.min_rect().left() + width);
-            let p = ui.painter();
-            let s = Stroke::new(2.0, t.accent);
-            p.line_segment([pos2(x0, y), pos2(x1, y)], s);
-            p.line_segment([pos2(x0, y - 4.0), pos2(x0, y + 4.0)], s);
-            p.line_segment([pos2(x1, y - 4.0), pos2(x1, y + 4.0)], s);
+            crate::widgets::insertion_line(ui.painter(), x0, x1, y, t.accent);
         }
         if released {
             app.selpane.drag = None;
