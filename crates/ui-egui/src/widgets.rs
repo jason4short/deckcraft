@@ -334,16 +334,13 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
     // let go, so a drag is one change.
     ui.label(egui::RichText::new("Custom").font(theme::bold(12.0)));
     let pid = ui.id().with("picker");
-    let (mut c, mut pending): (Color32, bool) = ui.data_mut(|d| d.get_temp(pid)).unwrap_or((Color32::from_rgb(0x33, 0x66, 0xCC), false));
-    ui.spacing_mut().slider_width = 200.0;
-    if egui::widgets::color_picker::color_picker_color32(ui, &mut c, egui::widgets::color_picker::Alpha::Opaque) {
-        pending = true;
+    let last: Rgba = ui.data(|d| d.get_temp(pid.with("last"))).unwrap_or(Rgba::rgb(0x33, 0x66, 0xCC));
+    if let Some(p) = crate::colorpick::picker(ui, pid, last, false) {
+        ui.data_mut(|d| d.insert_temp(pid.with("last"), p.color));
+        if p.done {
+            out = Some(Some(ColorRef::rgb(Rgba { a: 255, ..p.color })));
+        }
     }
-    if pending && !ui.input(|i| i.pointer.any_down()) {
-        pending = false;
-        out = Some(Some(ColorRef::rgb(Rgba::rgb(c.r(), c.g(), c.b()))));
-    }
-    ui.data_mut(|d| d.insert_temp(pid, (c, pending)));
     // "More Colors…": a hex field.
     let id = ui.id().with("hex");
     let mut hex: String = ui.data_mut(|d| d.get_temp::<String>(id).unwrap_or_default());
@@ -569,4 +566,33 @@ mod tests {
         assert_eq!(*picked.borrow(), Some(Some(ColorRef::rgb(Rgba::from_hex("00FF00").unwrap()))));
         assert!(harness.query_by_role(Role::TextInput).is_none(), "picking a colour closes the menu");
     }
+}
+
+/// A light checkerboard of `cell`-point squares in `rect`: what shows through transparency
+/// (from FigCraft).
+pub fn checker(painter: &egui::Painter, rect: Rect, cell: f32) {
+    painter.rect_filled(rect, CornerRadius::ZERO, Color32::WHITE);
+    if cell <= 0.5 {
+        return;
+    }
+    let nx = (rect.width() / cell).ceil() as i32;
+    let ny = (rect.height() / cell).ceil() as i32;
+    for y in 0..ny.min(400) {
+        for x in 0..nx.min(400) {
+            if (x + y) % 2 == 0 {
+                continue;
+            }
+            let r = Rect::from_min_size(pos2(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell), vec2(cell, cell)).intersect(rect);
+            painter.rect_filled(r, CornerRadius::ZERO, Color32::from_gray(0xE6));
+        }
+    }
+}
+
+/// Where a dragged row or item would land: an accent line from `x0` to `x1` at `y`, with end
+/// ticks (from FigCraft).
+pub fn insertion_line(painter: &egui::Painter, x0: f32, x1: f32, y: f32, color: Color32) {
+    let s = Stroke::new(2.0, color);
+    painter.line_segment([pos2(x0, y), pos2(x1, y)], s);
+    painter.line_segment([pos2(x0, y - 4.0), pos2(x0, y + 4.0)], s);
+    painter.line_segment([pos2(x1, y - 4.0), pos2(x1, y + 4.0)], s);
 }

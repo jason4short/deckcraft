@@ -9,6 +9,7 @@
 pub mod backstage;
 pub mod canvas;
 pub mod canvas_shell;
+pub mod colorpick;
 pub mod control;
 pub mod credits;
 pub mod dialogs;
