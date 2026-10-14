@@ -872,3 +872,37 @@ fn command_click_selects_a_layer_inside_a_group() {
     assert_eq!((bx.x, bx.y), (320.0, 110.0), "the grouped layer moved");
     assert_eq!((ax.x, ax.y), (100.0, 100.0), "its sibling stayed");
 }
+
+#[test]
+fn a_grouped_layer_follows_its_group_and_moves_on_the_slide() {
+    let mut s = session();
+    s.prefs.snap_to_grid = false;
+    s.prefs.smart_guides = false;
+    s.prefs.cmd_deep_select = true;
+    let a = s.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap() as u32;
+    let b = s.execute("shape.insert", &json!({"preset": "rect", "rect": [300, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap() as u32;
+    s.execute("selection.select", &json!({"ids": [a, b]})).unwrap();
+    s.execute("arrange.group", &json!({})).unwrap();
+    // Move and stretch the group: its layers go with it.
+    s.execute("shape.move", &json!({"dx": 50, "dy": 20})).unwrap();
+    s.execute("shape.resize", &json!({"w": 560})).unwrap();
+    let on_slide = |s: &Session, id: u32| {
+        let st = s.doc().unwrap();
+        cmd::xfrm_of(&st.doc, &st.selection, st.shape(ShapeId(id)).unwrap())
+    };
+    let bx = on_slide(&s, b);
+    assert!((bx.x - 550.0).abs() < 0.01 && (bx.y - 120.0).abs() < 0.01 && (bx.w - 160.0).abs() < 0.01, "{bx:?}");
+    // ⌘-click finds it where it is now, and a drag moves it by as much on the slide.
+    let ev = |kind, x, y| PointerEvent { kind, x, y, mods: Mods { cmd: true, ..Mods::default() }, tol: 3.0 };
+    s.pointer(ev(PointerKind::Down, 600.0, 150.0)).unwrap();
+    s.pointer(ev(PointerKind::Drag, 610.0, 160.0)).unwrap();
+    s.pointer(ev(PointerKind::Up, 610.0, 160.0)).unwrap();
+    assert_eq!(s.doc().unwrap().selection.shapes, vec![ShapeId(b)]);
+    let moved = on_slide(&s, b);
+    assert!((moved.x - 560.0).abs() < 0.01 && (moved.y - 130.0).abs() < 0.01, "{moved:?}");
+    assert!((moved.w - 160.0).abs() < 0.01, "size kept");
+    // The panel's X field (shape.move) works on the slide too.
+    s.execute("shape.move", &json!({"x": 600})).unwrap();
+    assert!((on_slide(&s, b).x - 600.0).abs() < 0.01);
+    assert!((on_slide(&s, a).x - 150.0).abs() < 0.01, "the sibling stays");
+}

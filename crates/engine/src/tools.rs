@@ -266,7 +266,7 @@ impl Session {
 
     /// The innermost layer under `p`, looking inside groups (topmost first), as a shape hit.
     fn deep_hit(&self, st: &crate::DocState, p: Point, tol: f64) -> Option<Hit> {
-        fn rec(st: &crate::DocState, shapes: &[Shape], parent: Option<(Xfrm, Xfrm)>, p: Point, tol: f64, depth: usize, through: bool) -> Option<Hit> {
+        fn rec(st: &crate::DocState, shapes: &[Shape], p: Point, tol: f64, depth: usize, through: bool) -> Option<Hit> {
             if depth > 32 {
                 return None;
             }
@@ -274,15 +274,11 @@ impl Session {
                 if sh.hidden || (sh.locked && through) {
                     continue;
                 }
-                let own = xfrm_of(&st.doc, &st.selection, sh);
-                // A grouped layer's box on the slide.
-                let x = match parent {
-                    Some((g, ch)) => cmd::arrange::child_to_parent(&g, &ch, &own),
-                    None => own,
-                };
+                // Where the layer is on the slide (grouped layers too).
+                let x = xfrm_of(&st.doc, &st.selection, sh);
                 match &sh.kind {
-                    ShapeKind::Group { children, child } => {
-                        if let Some(h) = rec(st, children, Some((x, *child)), p, tol, depth + 1, through) {
+                    ShapeKind::Group { children, .. } => {
+                        if let Some(h) = rec(st, children, p, tol, depth + 1, through) {
                             return Some(h);
                         }
                     }
@@ -295,7 +291,7 @@ impl Session {
             }
             None
         }
-        rec(st, st.shapes(), None, p, tol, 0, self.prefs.locked_click_through)
+        rec(st, st.shapes(), p, tol, 0, self.prefs.locked_click_through)
     }
 
     /// Feed a pointer event to the active tool. Returns what happened (for agents).
@@ -543,10 +539,11 @@ impl Session {
                 let origs2: Vec<(ShapeId, Xfrm)> =
                     if duplicate { ids_now.iter().copied().zip(origs.iter().map(|o| o.1)).collect() } else { origs.clone() };
                 self.edit(|doc, sel| {
+                    let frames: Vec<Option<(Xfrm, Xfrm)>> = origs2.iter().map(|(id, _)| cmd::group_frame(doc, sel, *id)).collect();
                     let list = crate::shapes_mut(doc, sel).ok_or_else(|| cmd::bad("move", "no slide"))?;
-                    for (id, o) in &origs2 {
+                    for ((id, o), frame) in origs2.iter().zip(frames) {
                         if let Some(sh) = deckcraft_model::find_shape_mut(list, *id) {
-                            sh.xfrm = Some(Xfrm { x: o.x + d.x, y: o.y + d.y, ..*o });
+                            sh.xfrm = Some(cmd::stored_xfrm(frame, Xfrm { x: o.x + d.x, y: o.y + d.y, ..*o }));
                         }
                     }
                     // A connector dragged away from shapes that stay put comes unglued at those ends.
@@ -921,9 +918,10 @@ impl Session {
             _ => None,
         });
         self.edit(|doc, sel| {
+            let frame = cmd::group_frame(doc, sel, id);
             let list = crate::shapes_mut(doc, sel).ok_or_else(|| cmd::bad("tool", "no slide"))?;
             if let Some(sh) = deckcraft_model::find_shape_mut(list, id) {
-                sh.xfrm = Some(x);
+                sh.xfrm = Some(cmd::stored_xfrm(frame, x));
                 if let ShapeKind::Table(t) = &mut sh.kind {
                     // Tables resize their columns and rows proportionally.
                     let heights: Vec<f64> = match &drawn {
