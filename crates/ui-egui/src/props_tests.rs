@@ -452,17 +452,6 @@ fn a_placeholder_resets_or_lines_up_its_kind_on_every_slide() {
 }
 
 #[test]
-fn a_thumbnail_marks_and_selects_its_moved_placeholders() {
-    let mut h = harness();
-    let ids = moved_titles(&mut h);
-    assert!(h.query_by_label("Slide 1: placeholders moved off the layout").is_none());
-    click(&mut h, "Slide 2: placeholders moved off the layout");
-    let d = h.state().session.active().unwrap();
-    assert_eq!(d.selection.slide, 1);
-    assert_eq!(d.selection.shapes.iter().map(|s| s.0).collect::<Vec<_>>(), vec![ids[0]]);
-}
-
-#[test]
 fn a_text_box_is_made_the_slides_title_from_the_tag_menu() {
     let mut h = harness();
     h.state_mut().session.execute("slide.new", &json!({})).unwrap();

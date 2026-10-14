@@ -32,7 +32,6 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
 
 pub(crate) fn list(app: &mut SlideApp, ui: &mut Ui) {
     app.thumbs_rect = Some(ui.clip_rect());
-    let moved = app.moved_placeholders();
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
     let doc = st.doc.clone();
@@ -142,25 +141,6 @@ pub(crate) fn list(app: &mut SlideApp, ui: &mut Ui) {
                 need_more = true;
             }
         }
-        // Placeholders moved off the layout: a marker that selects them.
-        let strays: Vec<&(usize, u32, String)> = moved.iter().filter(|m| m.0 == i).collect();
-        if !strays.is_empty() {
-            let c = pos2(img.min.x + 9.0, img.max.y - 9.0);
-            let mr = Rect::from_center_size(c, vec2(16.0, 16.0));
-            let mresp = ui.interact(mr, ui.id().with(("moved", i)), Sense::click());
-            ui.painter().circle(c, if mresp.hovered() { 7.0 } else { 6.0 }, t.accent, Stroke::new(1.5, Color32::WHITE));
-            let names: Vec<String> = strays.iter().map(|m| crate::props::kind_name(&m.2, false)).collect();
-            let tip = format!("Moved off the layout: {}. Click to select", names.join(", "));
-            mresp.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Slide {}: placeholders moved off the layout", i + 1))
-            });
-            if mresp.on_hover_text(tip).clicked() {
-                let ids: Vec<u32> = strays.iter().map(|m| m.1).collect();
-                let _ = app.run("slide.go", json!({"index": i}));
-                let _ = app.run("selection.select", json!({"ids": ids}));
-                app.slides_focus = false;
-            }
-        }
         if run.len() > 1 {
             // "3 states" in a pill on the thumbnail's bottom right.
             let text = format!("{} states", run.len());
@@ -174,7 +154,9 @@ pub(crate) fn list(app: &mut SlideApp, ui: &mut Ui) {
         }
         let p = ui.painter();
         if selected {
-            p.rect_stroke(img.expand(2.0), CornerRadius::same(4), Stroke::new(3.0, t.accent), egui::StrokeKind::Outside);
+            // Accent while the list has the keyboard, grey when it doesn't (as macOS lists do).
+            let c = if app.slides_focus { t.accent } else { t.text_faint };
+            p.rect_stroke(img.expand(2.0), CornerRadius::same(4), Stroke::new(3.0, c), egui::StrokeKind::Outside);
         } else {
             p.rect_stroke(
                 img,
