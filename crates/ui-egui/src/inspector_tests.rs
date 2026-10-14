@@ -94,3 +94,35 @@ fn nothing_selected_lists_text_styles_and_edits_one_for_the_deck() {
     h.run_steps(3);
     assert!(h.query_by_label("Edit text style Title").is_some(), "back to the list");
 }
+
+#[test]
+fn slide_master_view_edits_the_master_and_layouts() {
+    let mut app = SlideApp::new(Session::with_new(), Services::default());
+    app.run("view.shell", json!({"shell": "canvas"})).unwrap();
+    app.run("view.slideMaster", json!({"master": 0, "layout": null})).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1600.0)).build_ui_state(
+        |ui, app: &mut SlideApp| {
+            app.logic(ui.ctx());
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(3);
+    for label in ["Theme colors", "Theme fonts", "Background", "Theme color accent1"] {
+        assert!(h.query_by_label(label).is_some(), "{label}");
+    }
+    // A theme colour typed as hex.
+    h.state_mut().run("design.colors", json!({"colors": {"accent1": "#123456"}})).unwrap();
+    let m = |h: &Harness<'static, SlideApp>| h.state().session.active().unwrap().doc.masters[0].clone();
+    assert_eq!(m(&h).theme.colors.get(deckcraft_color::SchemeSlot::Accent1).hex(), "123456");
+    // A layout: its own background and hiding the master's graphics.
+    h.state_mut().run("view.slideMaster", json!({"master": 0, "layout": 1})).unwrap();
+    h.run_steps(3);
+    assert!(h.query_by_label("Hide background graphics").is_some());
+    h.get_by_label("Hide background graphics").click();
+    h.run_steps(3);
+    assert!(!m(&h).layouts[1].show_master_shapes);
+    h.state_mut().run("design.background", json!({"color": "#FF0000"})).unwrap();
+    assert!(m(&h).layouts[1].background.is_some());
+    assert!(m(&h).background != m(&h).layouts[1].background, "the master keeps its own");
+}

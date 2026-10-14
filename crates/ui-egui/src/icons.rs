@@ -306,6 +306,8 @@ icons! {
     TextTop => "text-top",
     TextMiddle => "text-middle",
     TextBottom => "text-bottom",
+    /// A circular arrow: put back as it was (a placeholder onto its layout's position).
+    Revert => "revert",
     /// A slide on an easel: a presentation (document tabs).
     Deck => "deck",
     /// A luggage tag: what placeholder of the layout a box is.
@@ -2344,6 +2346,12 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.seg((4.0, 9.0), (7.0, 10.0), K);
             p.seg((15.0, 20.0), (14.0, 17.0), K);
             p.seg((20.0, 15.0), (17.0, 14.0), K);
+        }
+        I::Revert => {
+            // Three quarters of a circle, from the left over the top round to the bottom, with
+            // the arrowhead at its start: turning back.
+            p.line(&arc_pts((12.0, 12.0), 7.0, 7.0, 180.0, 450.0), K);
+            p.line(&[(2.5, 10.0), (5.0, 12.8), (7.5, 10.0)], K);
         }
         I::Deck => {
             p.rect(3.5, 4.5, 20.5, 15.5, 1.5, N, K);

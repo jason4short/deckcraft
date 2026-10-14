@@ -330,6 +330,20 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
     {
         out = Some(None);
     }
+    // Any colour: a saturation / value square and hue bar. The colour applies when the pointer is
+    // let go, so a drag is one change.
+    ui.label(egui::RichText::new("Custom").font(theme::bold(12.0)));
+    let pid = ui.id().with("picker");
+    let (mut c, mut pending): (Color32, bool) = ui.data_mut(|d| d.get_temp(pid)).unwrap_or((Color32::from_rgb(0x33, 0x66, 0xCC), false));
+    ui.spacing_mut().slider_width = 200.0;
+    if egui::widgets::color_picker::color_picker_color32(ui, &mut c, egui::widgets::color_picker::Alpha::Opaque) {
+        pending = true;
+    }
+    if pending && !ui.input(|i| i.pointer.any_down()) {
+        pending = false;
+        out = Some(Some(ColorRef::rgb(Rgba::rgb(c.r(), c.g(), c.b()))));
+    }
+    ui.data_mut(|d| d.insert_temp(pid, (c, pending)));
     // "More Colors…": a hex field.
     let id = ui.id().with("hex");
     let mut hex: String = ui.data_mut(|d| d.get_temp::<String>(id).unwrap_or_default());

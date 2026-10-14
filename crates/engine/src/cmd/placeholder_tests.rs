@@ -218,3 +218,15 @@ fn the_master_takes_its_five_kinds_only() {
     s.execute("edit.undo", &json!({})).unwrap();
     assert!(template_shape(&s, id).unwrap().ph.is_none(), "one undo step");
 }
+
+#[test]
+fn reset_by_id_puts_back_just_that_box() {
+    let mut s = deck();
+    move_title(&mut s, 2, 40.0);
+    move_title(&mut s, 1, 40.0);
+    let id = title(&s, 1);
+    let r = s.execute("placeholder.reset", &json!({"ids": [id]})).unwrap();
+    assert_eq!(r["reset"], 1);
+    assert!(!title_at(&mut s, 1).2);
+    assert!(title_at(&mut s, 2).2, "the other slide's title stays where it was moved");
+}

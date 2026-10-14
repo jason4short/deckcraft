@@ -479,3 +479,16 @@ fn a_box_on_a_layout_is_tagged_from_the_same_menu() {
     assert_eq!(shape(h.state(), id).ph_type(), Some(deckcraft_model::PhType::Footer));
     h.get_by_label("Footer placeholder");
 }
+
+#[test]
+fn a_moved_placeholder_resets_from_the_layout_section() {
+    let mut h = harness();
+    let title = h.state().session.active().unwrap().current_slide().unwrap().shapes[0].id.0;
+    h.state_mut().run("selection.select", json!({"ids": [title]})).unwrap();
+    h.run_steps(3);
+    assert!(h.query_by_label("Reset to the layout's position and size").is_none(), "nothing to reset yet");
+    h.state_mut().run("shape.move", json!({"x": 40})).unwrap();
+    h.run_steps(3);
+    click(&mut h, "Reset to the layout's position and size");
+    assert!(shape(h.state(), title).xfrm.is_none(), "it follows its layout again");
+}

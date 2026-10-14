@@ -29,7 +29,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Reset Placeholder Positions",
             [],
             None,
-            "{kind?: (default: the selected placeholder's), slides?: [index] (default: every slide)} → {reset}: those placeholders take their layout's position and size again (text and formatting stay)",
+            "{ids?: [placeholders on the current slide] | kind?: (default: the selected placeholder's), slides?: [index] (default: every slide)} → {reset}: those placeholders take their layout's position and size again (text and formatting stay)",
             has_doc,
             reset
         ),
@@ -126,6 +126,18 @@ fn clear(doc: &mut Presentation, targets: &[(usize, ShapeId, PhType)]) {
 }
 
 fn reset(s: &mut Session, p: &Value) -> Result<Value> {
+    // Just these placeholders on the current slide.
+    if let Some(ids) = ids_param(p, "ids") {
+        let st = s.doc()?;
+        let targets: Vec<_> = placed(&st.doc, &[st.selection.slide], None, false).into_iter().filter(|t| ids.contains(&t.1)).collect();
+        if targets.is_empty() {
+            return Ok(json!({"reset": 0}));
+        }
+        return s.edit(|doc, _| {
+            clear(doc, &targets);
+            Ok(json!({"reset": targets.len()}))
+        });
+    }
     let kind = kind_param(s, p, "placeholder.reset")?;
     let st = s.doc()?;
     let slides: Vec<usize> = match p.get("slides").and_then(Value::as_array) {

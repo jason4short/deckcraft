@@ -660,13 +660,13 @@ fn every_slide(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, kind: deckcraft_mode
     };
     let n = moved.iter().filter(|m| same(&m.2)).count();
     let this_moved = moved.iter().any(|m| m.1 == sh.id.0);
-    caption(ui, &format!("Every slide's {many}"));
     let w = cols(ui);
     let t = Tokens::get(ui.ctx());
     let button = |ui: &mut Ui, label: String, en: bool| {
         let b = egui::Button::new(egui::RichText::new(label).font(theme::font(12.5))).fill(t.field).corner_radius(CornerRadius::same(6)).truncate();
         ui.add_enabled_ui(en, |ui| ui.add_sized(vec2(w, ROW_H), b)).inner
     };
+    caption(ui, &format!("Every slide's {many}"));
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
         let reset = button(ui, if n > 0 { format!("Reset {n}") } else { "None moved".into() }, n > 0);
@@ -741,7 +741,13 @@ pub fn resizing_of(sh: &Shape) -> Resizing {
 }
 
 fn layout(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, x: &Xfrm, boxes: &[(ShapeId, Xfrm)], texty: bool) {
-    section(ui, "Layout", false, &[]);
+    // A placeholder with a position or size of its own: a button putting it back on its layout's.
+    let on_slide = app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides);
+    let placed = on_slide && sh.ph.is_some() && sh.xfrm.is_some() && boxes.len() <= 1;
+    let actions: &[(Icon, &str)] = if placed { &[(Icon::Revert, "Reset to the layout's position and size")] } else { &[] };
+    if section(ui, "Layout", false, actions) == Some(0) {
+        run(app, "placeholder.reset", json!({"ids": [sh.id]}));
+    }
     let c = cols(ui);
     if texty && sh.text.is_some() {
         caption(ui, "Resizing");

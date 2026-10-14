@@ -23,11 +23,19 @@ pub fn specs() -> Vec<CommandSpec> {
             "Format Background",
             ["Design", "Customize"],
             None,
-            "{color? | gradient? | picture?: base64 | style?: 1..12 | reset?, all?: bool (apply to all), index?}",
-            has_slide,
+            "{color? | gradient? | picture?: base64 | style?: 1..12 | reset?, all?: bool (apply to all), index?} — the current slide's, or in Slide Master view the master's or layout's",
+            has_doc,
             background
         ),
-        cmd!("design.hideBackgroundGraphics", "Hide Background Graphics", ["Format Background"], None, "{hide?: bool}", has_slide, hide_bg_graphics),
+        cmd!(
+            "design.hideBackgroundGraphics",
+            "Hide Background Graphics",
+            ["Format Background"],
+            None,
+            "{hide?: bool} — the current slide's, or in Slide Master view the layout's",
+            has_doc,
+            hide_bg_graphics
+        ),
         cmd!(
             "design.slideSize",
             "Slide Size",
@@ -212,9 +220,20 @@ fn background(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn hide_bg_graphics(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit(|doc, sel| {
-        if let Some(sl) = doc.slides.get_mut(sel.slide) {
-            let sl = Arc::make_mut(sl);
-            sl.show_master_shapes = !bool_param(p, "hide").unwrap_or(sl.show_master_shapes);
+        match sel.target {
+            // A layout hides the master's graphics for every slide using it.
+            Target::Layout { master, layout } => {
+                if let Some(l) = doc.masters.get_mut(master).and_then(|m| Arc::make_mut(m).layouts.get_mut(layout)) {
+                    l.show_master_shapes = !bool_param(p, "hide").unwrap_or(l.show_master_shapes);
+                }
+            }
+            Target::Master { .. } => return Err(bad("design.hideBackgroundGraphics", "the master has no graphics behind it")),
+            Target::Slides => {
+                if let Some(sl) = doc.slides.get_mut(sel.slide) {
+                    let sl = Arc::make_mut(sl);
+                    sl.show_master_shapes = !bool_param(p, "hide").unwrap_or(sl.show_master_shapes);
+                }
+            }
         }
         Ok(())
     })?;
