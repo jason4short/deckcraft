@@ -16,8 +16,6 @@ use crate::theme::{self, Tokens};
 use crate::{SlideApp, widgets};
 
 /// Letter spacing presets, in points (the values PowerPoint's Character Spacing menu uses).
-const SPACING: [(&str, f64); 5] = [("Very tight", -3.0), ("Tight", -1.5), ("Normal", 0.0), ("Loose", 3.0), ("Very loose", 6.0)];
-
 fn run(app: &mut SlideApp, id: &str, p: Value) {
     if id.starts_with("format.") {
         // While typing with a bare caret, the panel formats the whole box.
@@ -146,74 +144,6 @@ pub fn weight_commands(base: &str, style: &str) -> Vec<(&'static str, Value)> {
         "Bold" => vec![("format.font", json!({"family": base})), ("format.bold", json!({"on": true}))],
         s => vec![("format.font", json!({"family": format!("{base} {s}")})), ("format.bold", json!({"on": false}))],
     }
-}
-
-/// Font, weight, size, line height and letter spacing.
-pub(crate) fn type_basics(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
-    let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
-    let bold = st.get("bold").and_then(Value::as_bool).unwrap_or(false);
-    let (base, styles, current) = weights(&font, bold);
-    let w = ui.available_width();
-    let families = crate::ribbon::font_families(app);
-    widgets::dropdown(ui, "insp-font", if base.is_empty() { "Font" } else { &base }, w, en, |ui| {
-        for f in families {
-            if ui.selectable_label(f == base, &f).clicked() {
-                run(app, "format.font", json!({"family": f}));
-                ui.close();
-            }
-        }
-    });
-    ui.add_space(6.0);
-    let half = (w - 8.0) / 2.0;
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.set_width(half);
-            caption(ui, "Weight");
-            widgets::dropdown(ui, "insp-weight", &current, half, en, |ui| {
-                for s in &styles {
-                    if ui.selectable_label(*s == current, s).clicked() {
-                        for (id, p) in weight_commands(&base, s) {
-                            run(app, id, p);
-                        }
-                        ui.close();
-                    }
-                }
-            });
-        });
-        ui.vertical(|ui| {
-            caption(ui, "Size");
-            let u = crate::units::small(app);
-            let size = st.get("size").and_then(Value::as_f64).unwrap_or(18.0);
-            if let Some(v) = widgets::spinner(ui, "insp-size", u.show(size), 1.0, u.suffix, half - 14.0) {
-                run(app, "format.size", json!({"size": u.to_pt(v).clamp(1.0, 4000.0)}));
-            }
-        });
-    });
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.set_width(half);
-            caption(ui, "Line height");
-            let pct = match st.get("lineSpacing") {
-                Some(v) if v.get("kind").and_then(Value::as_str) == Some("pct") => v.get("v").and_then(Value::as_f64).unwrap_or(1.0) * 100.0,
-                _ => 100.0,
-            };
-            if let Some(v) = widgets::spinner(ui, "insp-lh", pct.round(), 5.0, "%", half - 14.0) {
-                run(app, "format.lineSpacing", json!({"lines": (v / 100.0).clamp(0.1, 9.99)}));
-            }
-        });
-        ui.vertical(|ui| {
-            caption(ui, "Letter spacing");
-            widgets::dropdown(ui, "insp-spacing", "Spacing", half, en, |ui| {
-                for (l, pt) in SPACING {
-                    if ui.button(l).clicked() {
-                        run(app, "format.spacing", json!({"pt": pt}));
-                        ui.close();
-                    }
-                }
-            });
-        });
-    });
 }
 
 /// Bold, italic, underline, strikethrough, lists and (when `color`) the text colour.

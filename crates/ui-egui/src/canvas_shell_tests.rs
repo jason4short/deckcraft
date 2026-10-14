@@ -215,6 +215,6 @@ fn the_inspector_shows_a_title_size_in_pixels() {
     // slide's title is 60 pt, 120 px.
     h.get_by_label("Detach style").click();
     h.run_steps(3);
-    assert!(h.query_all_by_value("120 px").next().is_some(), "the size field reads 120 px");
+    assert!(h.query_all_by_value("120").next().is_some(), "the size field reads 120 (px, the unit the panel uses)");
     assert!(h.query_by_label("45%").is_some(), "the zoom reads 45%");
 }

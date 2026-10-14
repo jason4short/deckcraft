@@ -85,7 +85,7 @@ fn section_buttons(ui: &mut Ui, title: &str, empty: bool, actions: &[(Icon, &str
     let mut out = vec![];
     ui.horizontal(|ui| {
         ui.set_min_height(26.0);
-        ui.label(egui::RichText::new(title).font(theme::bold(13.5)).color(if empty { t.text_dim } else { t.text }));
+        ui.label(egui::RichText::new(title).font(theme::bold(13.0)).color(if empty { t.caption } else { t.text }));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             for (icon, tip) in actions.iter().rev() {
@@ -101,7 +101,7 @@ fn section_buttons(ui: &mut Ui, title: &str, empty: bool, actions: &[(Icon, &str
 pub(crate) fn caption(ui: &mut Ui, text: &str) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(2.0);
-    ui.label(egui::RichText::new(text).font(theme::font(11.5)).color(t.text_dim));
+    ui.label(egui::RichText::new(text).font(theme::font(11.0)).color(t.caption));
 }
 
 pub(crate) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, en: bool) -> egui::Response {
@@ -110,7 +110,7 @@ pub(crate) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, en: bool) -> egui:
     if en && resp.hovered() {
         ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
     }
-    icons::paint(ui.painter(), r.shrink(5.0), icon, t.text, !en);
+    icons::paint_mono(ui.painter(), r.shrink(5.0), icon, t.text, !en);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, en, tip));
     resp.on_hover_text(tip)
 }
@@ -119,7 +119,7 @@ pub(crate) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, en: bool) -> egui:
 pub(crate) fn seg_group(ui: &mut Ui, items: &[(Icon, &str, bool)], width: f32, en: bool) -> Option<usize> {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(6), t.hover);
+    ui.painter().rect_filled(r, CornerRadius::same(6), t.field);
     let n = items.len().max(1) as f32;
     let cw = r.width() / n;
     let mut out = None;
@@ -127,15 +127,13 @@ pub(crate) fn seg_group(ui: &mut Ui, items: &[(Icon, &str, bool)], width: f32, e
         let cell = Rect::from_min_size(pos2(r.min.x + k as f32 * cw, r.min.y), vec2(cw, r.height()));
         let resp = ui.interact(cell, ui.id().with(("seg", tip)), if en { Sense::click() } else { Sense::hover() });
         if *on {
-            ui.painter().rect(cell.shrink(1.5), CornerRadius::same(5), t.card, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+            ui.painter().rect(cell.shrink(1.0), CornerRadius::same(5), t.card, Stroke::new(1.0, t.card_border), egui::StrokeKind::Inside);
         } else if en && resp.hovered() {
-            ui.painter().rect_filled(cell.shrink(1.5), CornerRadius::same(5), t.pressed);
+            ui.painter().rect_filled(cell.shrink(1.0), CornerRadius::same(5), t.hover);
         }
-        if k > 0 && !on && !items.get(k - 1).is_some_and(|i| i.2) {
-            ui.painter().vline(cell.min.x, cell.y_range().shrink(7.0), Stroke::new(1.0, t.card));
-        }
-        let s = (cell.height() - 12.0).min(cell.width() - 6.0);
-        icons::paint(ui.painter(), Rect::from_center_size(cell.center(), vec2(s, s)), *icon, t.text, !en);
+        let s = (cell.height() - 14.0).min(cell.width() - 6.0);
+        let ink = if *on { t.text } else { t.text_dim };
+        icons::paint_mono(ui.painter(), Rect::from_center_size(cell.center(), vec2(s, s)), *icon, ink, !en);
         resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, en, *on, *tip));
         if resp.on_hover_text(*tip).clicked() {
             out = Some(k);
@@ -148,6 +146,8 @@ pub(crate) fn seg_group(ui: &mut Ui, items: &[(Icon, &str, bool)], width: f32, e
 pub(crate) enum Prefix {
     Text(&'static str),
     Icon(Icon),
+    /// No prefix (and so no scrubbing): the value alone, as a type size is shown.
+    None,
 }
 
 /// A grey number field. Dragging the prefix scrubs the value (`step` per point dragged); typing
@@ -197,8 +197,9 @@ fn number_or_mixed(
     let value = value.unwrap_or(0.0);
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(6), t.hover);
-    let pre = Rect::from_min_size(r.min, vec2(28.0, r.height()));
+    ui.painter().rect_filled(r, CornerRadius::same(6), t.field);
+    let pre_w = if matches!(prefix, Prefix::None) { 8.0 } else { 28.0 };
+    let pre = Rect::from_min_size(r.min, vec2(pre_w, r.height()));
     let scrub = ui.interact(pre, ui.id().with((id, "scrub")), if en && !mixed { Sense::drag() } else { Sense::hover() });
     if en && !mixed && (scrub.hovered() || scrub.dragged()) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -218,12 +219,13 @@ fn number_or_mixed(
             shown = v;
         }
     }
-    let ink = if en { t.text_dim } else { t.text_faint };
+    let ink = if en { t.caption } else { t.text_faint };
     match prefix {
         Prefix::Text(s) => {
-            ui.painter().text(pre.center(), Align2::CENTER_CENTER, s, theme::font(12.5), ink);
+            ui.painter().text(pre.center(), Align2::CENTER_CENTER, s, theme::font(11.5), ink);
         }
-        Prefix::Icon(i) => icons::paint(ui.painter(), Rect::from_center_size(pre.center(), vec2(14.0, 14.0)), i, ink, !en),
+        Prefix::Icon(i) => icons::paint_mono(ui.painter(), Rect::from_center_size(pre.center(), vec2(14.0, 14.0)), i, ink, !en),
+        Prefix::None => {}
     }
     let tkey = ui.id().with((id, "typing"));
     let edit_id = ui.id().with((id, "edit"));
@@ -246,7 +248,8 @@ fn number_or_mixed(
         er.size(),
         egui::TextEdit::singleline(&mut text)
             .frame(egui::Frame::NONE)
-            .font(theme::font(13.0))
+            .font(theme::font(12.5))
+            .text_color(t.text)
             .hint_text(if mixed { "Mixed" } else { "" })
             .interactive(en)
             .id(edit_id),
@@ -275,16 +278,16 @@ pub(crate) fn pick(ui: &mut Ui, id: &str, label: &str, width: f32, en: bool, add
 pub(crate) fn pick_wide(ui: &mut Ui, id: &str, label: &str, width: f32, menu_w: f32, en: bool, add: impl FnOnce(&mut Ui)) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(width, ROW_H), if en { Sense::click() } else { Sense::hover() });
-    ui.painter().rect_filled(r, CornerRadius::same(6), if en && resp.hovered() { t.pressed } else { t.hover });
-    let text_r = Rect::from_min_max(pos2(r.min.x + 10.0, r.min.y), pos2(r.max.x - 22.0, r.max.y));
+    ui.painter().rect_filled(r, CornerRadius::same(6), if en && resp.hovered() { t.hover } else { t.field });
+    let text_r = Rect::from_min_max(pos2(r.min.x + 8.0, r.min.y), pos2(r.max.x - 22.0, r.max.y));
     ui.painter().with_clip_rect(text_r).text(
         pos2(text_r.min.x, r.center().y),
         Align2::LEFT_CENTER,
         label,
-        theme::font(13.0),
+        theme::font(12.5),
         if en { t.text } else { t.text_faint },
     );
-    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.max.x - 12.0, r.center().y), vec2(10.0, 10.0)), Icon::ChevronDown, t.text_dim, !en);
+    icons::paint_mono(ui.painter(), Rect::from_center_size(pos2(r.max.x - 12.0, r.center().y), vec2(9.0, 9.0)), Icon::ChevronDown, t.caption, !en);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, format!("{id}: {label}")));
     egui::Popup::menu(&resp).width(menu_w).show(|ui| {
         egui::ScrollArea::vertical().max_height(360.0).show(ui, add);
@@ -377,7 +380,7 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
             }
             // The name takes the rest of the row, cut short with … when it's long.
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.add(egui::Label::new(egui::RichText::new(&title).font(theme::bold(15.0)).color(t.text)).truncate());
+                ui.add(egui::Label::new(egui::RichText::new(&title).font(theme::bold(14.0)).color(t.text)).truncate());
             });
         });
     });
@@ -631,7 +634,7 @@ fn every_slide(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, kind: deckcraft_mode
     let w = cols(ui);
     let t = Tokens::get(ui.ctx());
     let button = |ui: &mut Ui, label: String, en: bool| {
-        let b = egui::Button::new(egui::RichText::new(label).font(theme::font(12.5))).fill(t.hover).corner_radius(CornerRadius::same(6)).truncate();
+        let b = egui::Button::new(egui::RichText::new(label).font(theme::font(12.5))).fill(t.field).corner_radius(CornerRadius::same(6)).truncate();
         ui.add_enabled_ui(en, |ui| ui.add_sized(vec2(w, ROW_H), b)).inner
     };
     ui.horizontal(|ui| {
@@ -974,7 +977,7 @@ fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
     let styles = crate::textstyles::styles(&doc);
     // Text with a style shows the style; text without one, the type controls and a styles button.
     let shown = crate::textstyles::shown(app, &styles, &st);
-    let actions: &[(Icon, &str)] = if shown.is_none() { &[(Icon::Grid, "Text styles")] } else { &[] };
+    let actions: &[(Icon, &str)] = if shown.is_none() { &[(Icon::Styles, "Text styles")] } else { &[] };
     let buttons = section_buttons(ui, "Typography", false, actions);
     if let Some(b) = buttons.first() {
         crate::inspector::style_menu(app, b, "", 240.0);
@@ -985,7 +988,7 @@ fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
             let w = cols(ui) * 2.0 + GAP;
             ui.scope(|ui| {
                 ui.set_max_width(w);
-                crate::inspector::type_basics(app, ui, &st, en);
+                type_fields(app, ui, &st, en);
             });
         }
     }
@@ -1008,9 +1011,9 @@ fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
             crate::textstyles::run_on_text(app, id, vec![(id, json!({}))]);
         }
         let v = [
-            (Icon::AlignObjTop, "Text at top", anchor.starts_with('t')),
-            (Icon::AlignObjMiddle, "Text in the middle", anchor.starts_with("ctr") || anchor.starts_with('m')),
-            (Icon::AlignObjBottom, "Text at bottom", anchor.starts_with('b')),
+            (Icon::TextTop, "Text at top", anchor.starts_with('t')),
+            (Icon::TextMiddle, "Text in the middle", anchor.starts_with("ctr") || anchor.starts_with('m')),
+            (Icon::TextBottom, "Text at bottom", anchor.starts_with('b')),
         ];
         if let Some(k) = seg_group(ui, &v, c, en) {
             let anchor = ["top", "middle", "bottom"].get(k).copied().unwrap_or("top");
@@ -1018,7 +1021,7 @@ fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         }
         let t = Tokens::get(ui.ctx());
         let tip = if extras { "Hide type details" } else { "Type details: bold, italic, underline, lists" };
-        let r = icon_button(ui, Icon::Settings, tip, true);
+        let r = icon_button(ui, Icon::Sliders, tip, true);
         if extras {
             ui.painter().rect_stroke(r.rect, CornerRadius::same(5), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
         }
@@ -1041,6 +1044,60 @@ fn typography(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
     }
 }
 
+/// Font, weight, size, line height and letter spacing in the panel's grey fields.
+fn type_fields(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool) {
+    let font = st.get("font").and_then(Value::as_str).unwrap_or("").to_string();
+    let bold = st.get("bold").and_then(Value::as_bool).unwrap_or(false);
+    let (base, styles, current) = crate::inspector::weights(&font, bold);
+    // The caller limits the width to the two field columns.
+    let c = ((ui.available_width() - GAP) / 2.0).max(60.0);
+    let families = crate::ribbon::font_families(app);
+    pick(ui, "Font", if base.is_empty() { "Font" } else { &base }, c * 2.0 + GAP, en, |ui| {
+        for f in families {
+            if ui.selectable_label(f == base, &f).clicked() {
+                crate::textstyles::run_on_text(app, "format.font", vec![("format.font", json!({"family": f}))]);
+                ui.close();
+            }
+        }
+    });
+    ui.add_space(GAP);
+    let u = units::small(app);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = GAP;
+        pick(ui, "Weight", &current, c, en, |ui| {
+            for s in &styles {
+                if ui.selectable_label(*s == current, s).clicked() {
+                    crate::textstyles::run_on_text(app, "Weight", crate::inspector::weight_commands(&base, s));
+                    ui.close();
+                }
+            }
+        });
+        let size = st.get("size").and_then(Value::as_f64).unwrap_or(18.0);
+        if let Some(v) = number(ui, "type-size", Prefix::None, two(u.show(size)), "", c, 1.0, (1.0, u.show(4000.0)), en) {
+            crate::textstyles::run_on_text(app, "format.size", vec![("format.size", json!({"size": u.to_pt(v).clamp(1.0, 4000.0)}))]);
+        }
+    });
+    ui.add_space(GAP);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = GAP;
+        let pct = match st.get("lineSpacing") {
+            Some(v) if v.get("kind").and_then(Value::as_str) == Some("pct") => v.get("v").and_then(Value::as_f64).unwrap_or(1.0) * 100.0,
+            _ => 100.0,
+        };
+        let lh = ui.scope(|ui| number(ui, "type-lh", Prefix::Icon(Icon::LineSpacing), pct.round(), "%", c, 5.0, (10.0, 999.0), en));
+        if let Some(v) = lh.inner {
+            crate::textstyles::run_on_text(app, "format.lineSpacing", vec![("format.lineSpacing", json!({"lines": (v / 100.0).clamp(0.1, 9.99)}))]);
+        }
+        lh.response.on_hover_text("Line height");
+        let sp = st.get("spacing").and_then(Value::as_f64).unwrap_or(0.0);
+        let ls = ui.scope(|ui| number(ui, "type-ls", Prefix::Icon(Icon::CharSpacing), two(sp), "", c, 0.1, (-100.0, 1584.0), en));
+        if let Some(v) = ls.inner {
+            crate::textstyles::run_on_text(app, "format.spacing", vec![("format.spacing", json!({"pt": v}))]);
+        }
+        ls.response.on_hover_text("Letter spacing (points)");
+    });
+}
+
 /// The text style chip: "Ag Title · 120/108", which opens the style menu, with a button at its
 /// right end that detaches the text from the style.
 fn style_chip(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool, current: &str, styles: &[crate::textstyles::TextStyle]) {
@@ -1058,10 +1115,16 @@ fn style_chip(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool, current: &s
     let body = Rect::from_min_max(r.min, pos2(detach_r.min.x - 2.0, r.max.y));
     let resp = ui.interact(body, ui.id().with("style-chip"), if en { Sense::click() } else { Sense::hover() });
     let hovered = resp.hovered() || ui.rect_contains_pointer(r);
-    ui.painter().rect(r, CornerRadius::same(6), if resp.hovered() { t.hover } else { t.card }, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    let ag = ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, "Ag", theme::font(17.0), t.text);
-    let name = ui.painter().text(pos2(ag.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, current, theme::font(13.0), t.text);
-    ui.painter().text(pos2(name.max.x + 4.0, r.center().y), Align2::LEFT_CENTER, format!("· {metrics}"), theme::font(13.0), t.text_dim);
+    ui.painter().rect(
+        r,
+        CornerRadius::same(6),
+        if resp.hovered() { t.field } else { t.card },
+        Stroke::new(1.0, t.card_border),
+        egui::StrokeKind::Inside,
+    );
+    let ag = ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, "Ag", theme::bold(15.0), t.text);
+    let name = ui.painter().text(pos2(ag.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, current, theme::font(12.5), t.text);
+    ui.painter().text(pos2(name.max.x + 3.0, r.center().y), Align2::LEFT_CENTER, format!("· {metrics}"), theme::font(12.5), t.caption);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, format!("Text style: {current}")));
     crate::inspector::style_menu(app, &resp, current, w.max(220.0));
     // Detach: shown while the pointer is over the chip, as in canvas editors.
@@ -1071,7 +1134,7 @@ fn style_chip(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool, current: &s
         if dresp.hovered() {
             ui.painter().rect_filled(detach_r, CornerRadius::same(5), t.pressed);
         }
-        icons::paint(ui.painter(), detach_r.shrink(4.0), Icon::Detach, t.text, !en);
+        icons::paint_mono(ui.painter(), detach_r.shrink(4.0), Icon::Detach, t.text, !en);
     }
     let base = current.strip_suffix(" (copy)").unwrap_or(current);
     if dresp.on_hover_text("Detach style").clicked()
@@ -1118,23 +1181,23 @@ pub(crate) fn color_row(
 ) -> (Option<Value>, Option<f64>) {
     let t = Tokens::get(ui.ctx());
     let sc = scheme(app);
-    let op_w = if opacity.is_some() { 70.0 } else { 0.0 };
+    let op_w = if opacity.is_some() { 64.0 } else { 0.0 };
     let (r, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(6), t.hover);
-    let sw = Rect::from_center_size(pos2(r.min.x + 16.0, r.center().y), vec2(16.0, 16.0));
+    ui.painter().rect_filled(r, CornerRadius::same(6), t.field);
+    let sw = Rect::from_center_size(pos2(r.min.x + 15.0, r.center().y), vec2(14.0, 14.0));
     let sresp = ui.interact(sw.expand(3.0), ui.id().with((id, "swatch")), Sense::click());
     match rgba {
         Some(c) => {
             ui.painter().rect(
                 sw,
-                CornerRadius::same(3),
+                CornerRadius::same(2),
                 theme::to_color32(deckcraft_color::Rgba { a: 255, ..c }),
-                Stroke::new(1.0, t.border),
+                Stroke::new(1.0, egui::Color32::from_black_alpha(25)),
                 egui::StrokeKind::Inside,
             );
         }
         None => {
-            ui.painter().rect_stroke(sw, CornerRadius::same(3), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+            ui.painter().rect_stroke(sw, CornerRadius::same(2), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
         }
     }
     sresp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{id} color")));
@@ -1146,14 +1209,18 @@ pub(crate) fn color_row(
     });
     let hex_rect = Rect::from_min_max(pos2(sw.max.x + 8.0, r.min.y), pos2(r.max.x - op_w, r.max.y)).shrink2(vec2(0.0, 6.0));
     if let Some(l) = label {
-        ui.painter().text(pos2(hex_rect.min.x, r.center().y), Align2::LEFT_CENTER, l, theme::font(13.0), t.text);
+        ui.painter().text(pos2(hex_rect.min.x, r.center().y), Align2::LEFT_CENTER, l, theme::font(12.5), t.text);
     } else if let Some(c) = rgba {
         let tkey = ui.id().with((id, "hex"));
         let mut text: String = ui.data_mut(|d| d.get_temp(tkey)).unwrap_or_else(|| hex(c));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(hex_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
         let te = child.add_sized(
             hex_rect.size(),
-            egui::TextEdit::singleline(&mut text).frame(egui::Frame::NONE).font(theme::font(13.0)).id(ui.id().with((id, "hexedit"))),
+            egui::TextEdit::singleline(&mut text)
+                .frame(egui::Frame::NONE)
+                .font(theme::font(12.5))
+                .text_color(t.text)
+                .id(ui.id().with((id, "hexedit"))),
         );
         if te.has_focus() {
             ui.data_mut(|d| d.insert_temp(tkey, text.clone()));
@@ -1170,9 +1237,9 @@ pub(crate) fn color_row(
     let mut new_op = None;
     if let Some(op) = opacity {
         let orect = Rect::from_min_max(pos2(r.max.x - op_w, r.min.y), r.max);
-        ui.painter().vline(orect.min.x, orect.y_range().shrink(6.0), Stroke::new(1.0, t.card));
+        ui.painter().vline(orect.min.x, orect.y_range(), Stroke::new(1.0, t.card));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(orect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        new_op = number(&mut child, &format!("{id}-op"), Prefix::Text(""), op.round(), "%", orect.width(), 1.0, PERCENT, true);
+        new_op = number(&mut child, &format!("{id}-op"), Prefix::None, op.round(), " %", orect.width(), 1.0, PERCENT, true);
     }
     (picked, new_op)
 }
@@ -1209,16 +1276,19 @@ fn fill(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         Some(Fill::Pattern(_)) => (None, Some("Pattern")),
         _ => (None, Some("Automatic")),
     };
+    // As in canvas editors: the colour field, then the row's buttons (fill type, remove).
+    let field_w = (ui.available_width() - 2.0 * 26.0 - GAP - 4.0).max(120.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
-        let (picked, op) = color_row(app, ui, "Fill", rgba, label, if label.is_none() { opacity } else { None }, width);
+        let (picked, op) = color_row(app, ui, "Fill", rgba, label, if label.is_none() { opacity } else { None }, field_w);
         if let Some(col) = picked {
             run(app, "shape.fill", json!({"color": col}));
         }
         if let Some(v) = op {
             run(app, "shape.fill", json!({"transparency": 1.0 - v.clamp(0.0, 100.0) / 100.0}));
         }
-        let r = icon_button(ui, Icon::More, "Fill type: solid, gradient, image", true);
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let r = icon_button(ui, Icon::Styles, "Fill type: solid, gradient, image", true);
         egui::Popup::menu(&r).show(|ui| {
             if ui.button("Solid").clicked() {
                 run(app, "shape.fill", json!({"color": "accent1"}));
@@ -1234,11 +1304,10 @@ fn fill(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
             {
                 run(app, "shape.fill", json!({"picture": deckcraft_engine::cmd::base64_encode(&bytes)}));
             }
-            ui.separator();
-            if ui.button("Remove fill").clicked() {
-                run(app, "shape.fill", json!({"none": true}));
-            }
         });
+        if icon_button(ui, Icon::Minus, "Remove fill", true).clicked() {
+            run(app, "shape.fill", json!({"none": true}));
+        }
     });
     if let Some(Fill::Gradient(g)) = &sh.fill {
         ui.add_space(4.0);
@@ -1259,17 +1328,10 @@ fn stroke(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         None => line.is_none() && (sh.text_box || sh.ph.is_some()),
         _ => false,
     };
-    let actions: Vec<(Icon, &str)> = if none { vec![(Icon::Plus, "Add stroke")] } else { vec![(Icon::Minus, "Remove stroke")] };
-    match section(ui, "Stroke", none, &actions) {
-        Some(0) if none => {
-            run(app, "shape.line", json!({"color": "tx1", "width": 1}));
-            return;
-        }
-        Some(0) => {
-            run(app, "shape.line", json!({"none": true}));
-            return;
-        }
-        _ => {}
+    let actions: Vec<(Icon, &str)> = if none { vec![(Icon::Plus, "Add stroke")] } else { vec![] };
+    if section(ui, "Stroke", none, &actions) == Some(0) && none {
+        run(app, "shape.line", json!({"color": "tx1", "width": 1}));
+        return;
     }
     if none {
         return;
@@ -1279,18 +1341,27 @@ fn stroke(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         _ => (None, Some("Automatic")),
     };
     let c = cols(ui);
+    let field_w = (ui.available_width() - 2.0 * 26.0 - GAP - 4.0).max(120.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
-        let (picked, _) = color_row(app, ui, "Stroke", rgba, label, None, c);
+        let (picked, _) = color_row(app, ui, "Stroke", rgba, label, None, field_w);
         if let Some(col) = picked {
             run(app, "shape.line", json!({"color": col}));
         }
-        let u = units::small(app);
-        let w = line.and_then(|l| l.width).unwrap_or(0.75);
-        if let Some(v) = number(ui, "stroke-w", Prefix::Icon(Icon::LineSpacing), two(u.show(w)), "", c, 0.25, (0.0, u.show(1584.0)), true) {
-            run(app, "shape.line", json!({"width": u.to_pt(v).max(0.0)}));
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.add_space(26.0);
+        if icon_button(ui, Icon::Minus, "Remove stroke", true).clicked() {
+            run(app, "shape.line", json!({"none": true}));
         }
     });
+    ui.add_space(GAP);
+    let u = units::small(app);
+    let w = line.and_then(|l| l.width).unwrap_or(0.75);
+    let r = ui.scope(|ui| number(ui, "stroke-w", Prefix::Icon(Icon::ShapeOutline), two(u.show(w)), "", c, 0.25, (0.0, u.show(1584.0)), true));
+    if let Some(v) = r.inner {
+        run(app, "shape.line", json!({"width": u.to_pt(v).max(0.0)}));
+    }
+    r.response.on_hover_text("Stroke weight");
 }
 
 // ----- Effects --------------------------------------------------------------------------------
@@ -1327,7 +1398,7 @@ fn effects(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.set_min_height(26.0);
-        ui.label(egui::RichText::new("Effects").font(theme::bold(13.5)).color(if rows.is_empty() { t.text_dim } else { t.text }));
+        ui.label(egui::RichText::new("Effects").font(theme::bold(13.0)).color(if rows.is_empty() { t.caption } else { t.text }));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let r = icon_button(ui, Icon::Plus, "Add effect", en);
             egui::Popup::menu(&r).show(|ui| {
@@ -1368,7 +1439,7 @@ fn export(app: &mut SlideApp, ui: &mut Ui) {
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.set_min_height(26.0);
-        ui.label(egui::RichText::new("Export").font(theme::bold(13.5)).color(t.text_dim));
+        ui.label(egui::RichText::new("Export").font(theme::bold(13.0)).color(t.caption));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let r = icon_button(ui, Icon::Plus, "Export", true);
             egui::Popup::menu(&r).show(|ui| {

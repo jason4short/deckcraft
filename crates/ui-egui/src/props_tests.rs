@@ -250,11 +250,11 @@ fn styled_text_shows_its_style_and_unstyled_text_its_type_controls() {
     text_box(&mut h);
     assert!(h.query_by_label("Text style: Plain text").is_some(), "follows the presentation's default text style");
     assert!(h.query_by_label("Text styles").is_none(), "the chip itself opens the styles");
-    assert!(h.query_by_label("Weight").is_none(), "type controls are folded into the style");
+    assert!(h.query_by_label("Weight: Regular").is_none(), "type controls are folded into the style");
     // Its own size: no longer the style.
     h.state_mut().run("format.size", json!({"size": 31})).unwrap();
     h.run_steps(3);
-    assert!(h.query_by_label("Weight").is_some());
+    assert!(h.query_by_label("Weight: Regular").is_some());
     assert!(h.query_by_label("Text styles").is_some(), "a button applies a style");
 }
 
@@ -264,7 +264,7 @@ fn detaching_keeps_the_look_and_shows_the_type_controls() {
     let id = text_box(&mut h);
     let before = h.state_mut().session.execute("format.state", &json!({})).unwrap()["size"].clone();
     click(&mut h, "Detach style");
-    assert!(h.query_by_label("Weight").is_some(), "every type control");
+    assert!(h.query_by_label("Weight: Regular").is_some(), "every type control");
     assert!(h.query_by_label("Text style: Plain text").is_none());
     let sh = shape(h.state(), id);
     assert!(sh.text.unwrap().paragraphs[0].runs[0].props.size.is_some(), "the style's values are the text's own");
