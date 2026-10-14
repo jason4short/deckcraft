@@ -13,8 +13,8 @@ use crate::theme::{self, Tokens};
 use crate::units;
 use crate::{SlideApp, widgets};
 
-const ROW_H: f32 = 30.0;
-const GAP: f32 = 8.0;
+pub(crate) const ROW_H: f32 = 30.0;
+pub(crate) const GAP: f32 = 8.0;
 /// The column at the right for a row's extra button (constrain proportions, details).
 const SIDE: f32 = 30.0;
 
@@ -72,7 +72,7 @@ fn more_id() -> egui::Id {
 // ----- Building blocks ----------------------------------------------------------------------
 
 /// A section: hairline above, title, buttons at the right. Returns the button clicked.
-fn section(ui: &mut Ui, title: &str, empty: bool, actions: &[(Icon, &str)]) -> Option<usize> {
+pub(crate) fn section(ui: &mut Ui, title: &str, empty: bool, actions: &[(Icon, &str)]) -> Option<usize> {
     section_buttons(ui, title, empty, actions).iter().position(|r| r.clicked())
 }
 
@@ -98,13 +98,13 @@ fn section_buttons(ui: &mut Ui, title: &str, empty: bool, actions: &[(Icon, &str
     out
 }
 
-fn caption(ui: &mut Ui, text: &str) {
+pub(crate) fn caption(ui: &mut Ui, text: &str) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(2.0);
     ui.label(egui::RichText::new(text).font(theme::font(11.5)).color(t.text_dim));
 }
 
-fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, en: bool) -> egui::Response {
+pub(crate) fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, en: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), if en { Sense::click() } else { Sense::hover() });
     if en && resp.hovered() {
@@ -116,7 +116,7 @@ fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, en: bool) -> egui::Response {
 }
 
 /// A row of buttons in one grey pill; the ones that are on show as raised. Returns the one clicked.
-fn seg_group(ui: &mut Ui, items: &[(Icon, &str, bool)], width: f32, en: bool) -> Option<usize> {
+pub(crate) fn seg_group(ui: &mut Ui, items: &[(Icon, &str, bool)], width: f32, en: bool) -> Option<usize> {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
     ui.painter().rect_filled(r, CornerRadius::same(6), t.hover);
@@ -145,7 +145,7 @@ fn seg_group(ui: &mut Ui, items: &[(Icon, &str, bool)], width: f32, en: bool) ->
 }
 
 #[derive(Clone, Copy)]
-enum Prefix {
+pub(crate) enum Prefix {
     Text(&'static str),
     Icon(Icon),
 }
@@ -153,12 +153,12 @@ enum Prefix {
 /// A grey number field. Dragging the prefix scrubs the value (`step` per point dragged); typing
 /// a number and pressing Enter or leaving the field sets it. Returns the new value when one is set.
 #[allow(clippy::too_many_arguments)]
-fn number(ui: &mut Ui, id: &str, prefix: Prefix, value: f64, suffix: &str, width: f32, step: f64, range: Range, en: bool) -> Option<f64> {
+pub(crate) fn number(ui: &mut Ui, id: &str, prefix: Prefix, value: f64, suffix: &str, width: f32, step: f64, range: Range, en: bool) -> Option<f64> {
     number_or_mixed(ui, id, prefix, Some(value), suffix, width, step, range, en)
 }
 
 /// The values a field takes (dragging, arrow keys and typing all stay inside): `(min, max)`.
-type Range = (f64, f64);
+pub(crate) type Range = (f64, f64);
 const ANY: Range = (-1e6, 1e6);
 const NOT_NEGATIVE: Range = (0.0, 1e6);
 const PERCENT: Range = (0.0, 100.0);
@@ -266,8 +266,34 @@ fn number_or_mixed(
     out
 }
 
+/// A grey dropdown field like the number fields: `label`, a chevron, and a menu of `add`.
+pub(crate) fn pick(ui: &mut Ui, id: &str, label: &str, width: f32, en: bool, add: impl FnOnce(&mut Ui)) -> egui::Response {
+    pick_wide(ui, id, label, width, width.max(180.0), en, add)
+}
+
+/// `pick` with a menu `menu_w` wide (a gallery).
+pub(crate) fn pick_wide(ui: &mut Ui, id: &str, label: &str, width: f32, menu_w: f32, en: bool, add: impl FnOnce(&mut Ui)) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(width, ROW_H), if en { Sense::click() } else { Sense::hover() });
+    ui.painter().rect_filled(r, CornerRadius::same(6), if en && resp.hovered() { t.pressed } else { t.hover });
+    let text_r = Rect::from_min_max(pos2(r.min.x + 10.0, r.min.y), pos2(r.max.x - 22.0, r.max.y));
+    ui.painter().with_clip_rect(text_r).text(
+        pos2(text_r.min.x, r.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        theme::font(13.0),
+        if en { t.text } else { t.text_faint },
+    );
+    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.max.x - 12.0, r.center().y), vec2(10.0, 10.0)), Icon::ChevronDown, t.text_dim, !en);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, format!("{id}: {label}")));
+    egui::Popup::menu(&resp).width(menu_w).show(|ui| {
+        egui::ScrollArea::vertical().max_height(360.0).show(ui, add);
+    });
+    resp
+}
+
 /// Two half-width columns and the side column.
-fn cols(ui: &Ui) -> f32 {
+pub(crate) fn cols(ui: &Ui) -> f32 {
     ((ui.available_width() - SIDE - GAP * 2.0) / 2.0).max(60.0)
 }
 
@@ -1034,7 +1060,7 @@ fn text_color(app: &SlideApp, sh: &Shape) -> deckcraft_color::Rgba {
 
 /// A colour row: swatch (opens the colour grid), hex field, and an optional opacity field.
 /// Returns a picked colour (`#RRGGBB` or a theme colour) and/or a new opacity percentage.
-fn color_row(
+pub(crate) fn color_row(
     app: &SlideApp,
     ui: &mut Ui,
     id: &str,

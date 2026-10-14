@@ -81,7 +81,7 @@ fn nothing_selected_lists_text_styles_and_edits_one_for_the_deck() {
     }
     h.get_by_label("Edit text style Title").click();
     h.run_steps(3);
-    assert!(h.query_by_label("‹ Text styles").is_some(), "the style's editor is open");
+    assert!(h.query_by_label("Back to text styles").is_some(), "the style's editor is open");
     h.get_by_label("Italic").click();
     h.run_steps(3);
     let app = h.state_mut();
@@ -90,7 +90,7 @@ fn nothing_selected_lists_text_styles_and_edits_one_for_the_deck() {
     assert_eq!(st["italic"], true, "the title follows its edited style");
     app.session.execute("edit.deselect", &json!({})).unwrap();
     h.run_steps(3);
-    h.get_by_label("‹ Text styles").click();
+    h.get_by_label("Back to text styles").click();
     h.run_steps(3);
     assert!(h.query_by_label("Edit text style Title").is_some(), "back to the list");
 }
