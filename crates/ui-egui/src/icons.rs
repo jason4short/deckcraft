@@ -2458,14 +2458,18 @@ fn draw(p: &Pen<'_>, icon: Icon) {
                 p.seg((7.5, 16.5), (16.5, 16.5), K);
             }
         }
-        I::Eye | I::EyeOff => {
+        I::Eye => {
             let mut e = quad_pts((2.0, 12.0), (12.0, 4.0), (22.0, 12.0), 16);
             e.extend(quad_pts((22.0, 12.0), (12.0, 20.0), (2.0, 12.0), 16).into_iter().skip(1));
             e.pop();
             p.shape(&e, N, K);
             p.circle((12.0, 12.0), 3.2, N, K);
-            if icon == I::EyeOff {
-                p.seg_w((4.0, 21.0), (20.0, 3.0), K, 1.1);
+        }
+        I::EyeOff => {
+            // A closed eye: the lid's curve with lashes below it, as canvas editors show it.
+            p.line(&quad_pts((3.0, 10.0), (12.0, 17.0), (21.0, 10.0), 16), K);
+            for (a, b) in [((7.0, 14.0), (5.5, 16.5)), ((12.0, 15.6), (12.0, 18.6)), ((17.0, 14.0), (18.5, 16.5))] {
+                p.seg(a, b, K);
             }
         }
         I::Pointer => p.rshape(&[(5.5, 3.5), (19.0, 12.0), (12.5, 13.5), (9.0, 20.0)], 1.2, N, K),

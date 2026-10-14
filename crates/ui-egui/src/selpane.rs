@@ -162,11 +162,12 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
         let sel = selected.contains(&row.id);
         resp.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, true, sel, &row.name));
         let painter = ui.painter_at(r);
+        // The whole row, its eye and lock included, counts as hovered.
+        let hovered = ui.rect_contains_pointer(r);
         if sel {
-            painter.rect_filled(r, CornerRadius::same(3), t.selected);
-            painter.rect_stroke(r.shrink(0.5), CornerRadius::same(3), Stroke::new(1.0, t.text_faint), egui::StrokeKind::Inside);
-        } else if resp.hovered() {
-            painter.rect_filled(r, CornerRadius::same(3), t.hover);
+            painter.rect_filled(r, CornerRadius::same(5), t.selected_row);
+        } else if hovered {
+            painter.rect_filled(r, CornerRadius::same(5), t.hover);
         }
         let x0 = r.min.x + 4.0 + INDENT * row.depth as f32;
         // Group chevron.
@@ -196,9 +197,10 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
             }
         }
         let name_x = x0 + 16.0;
-        let eye = Rect::from_center_size(pos2(r.max.x - 34.0, r.center().y), vec2(16.0, 16.0));
-        let lock = Rect::from_center_size(pos2(r.max.x - 12.0, r.center().y), vec2(16.0, 16.0));
-        let name_rect = Rect::from_min_max(pos2(name_x, r.min.y + 2.0), pos2(eye.min.x - 6.0, r.max.y - 2.0));
+        // As in canvas editors: the eye at the right end, the lock before it.
+        let eye = Rect::from_center_size(pos2(r.max.x - 14.0, r.center().y), vec2(16.0, 16.0));
+        let lock = Rect::from_center_size(pos2(r.max.x - 38.0, r.center().y), vec2(16.0, 16.0));
+        let name_rect = Rect::from_min_max(pos2(name_x, r.min.y + 2.0), pos2(lock.min.x - 6.0, r.max.y - 2.0));
         let renaming = app.selpane.renaming.as_ref().filter(|(id, _)| *id == row.id).map(|(_, s)| s.clone());
         if let Some(mut buf) = renaming {
             let edit_id = ui.id().with(("rename", row.id));
@@ -224,7 +226,7 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
                 *s = buf;
             }
         } else {
-            let color = if row.dimmed { t.text_faint } else { t.text };
+            let color = if row.dimmed || row.hidden { t.text_faint } else { t.text };
             let name = painter.text(pos2(name_x, r.center().y), Align2::LEFT_CENTER, &row.name, theme::font(12.5), color);
             // A placeholder's kind as a small pill after its name.
             if let Some(tag) = &row.tag {
@@ -239,10 +241,14 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
                 painter.circle_filled(pos2(name_x - 7.0, r.center().y), 2.5, t.accent);
             }
         }
-        // Eye and padlock.
-        let ink = if row.dimmed { t.text_faint } else { t.text_dim };
-        icons::paint(&painter, eye, if row.hidden { Icon::EyeOff } else { Icon::Eye }, ink, false);
-        icons::paint(&painter, lock, if row.locked { Icon::Lock } else { Icon::Unlock }, ink, false);
+        // Eye and padlock: shown while the row is hovered, and always when hidden or locked.
+        let ink = if row.dimmed { t.text_faint } else { t.text };
+        if hovered || row.hidden {
+            icons::paint_mono(&painter, eye, if row.hidden { Icon::EyeOff } else { Icon::Eye }, ink, false);
+        }
+        if hovered || row.locked {
+            icons::paint_mono(&painter, lock, if row.locked { Icon::Lock } else { Icon::Unlock }, ink, false);
+        }
         let eye_resp = ui.interact(eye.expand(3.0), ui.id().with(("eye", row.id)), Sense::click());
         let eye_label = format!("{} {}", if row.hidden { "Show" } else { "Hide" }, row.name);
         eye_resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &eye_label));

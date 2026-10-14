@@ -50,6 +50,8 @@ pub struct Tokens {
     /// 3:1 against the panel), as in FigCraft's UI3 tokens.
     pub field_hover_border: Color32,
     pub focus: Color32,
+    /// Canvas shell lists (Layers): a selected row's highlight, blue as in canvas editors.
+    pub selected_row: Color32,
 }
 
 impl Tokens {
@@ -83,6 +85,7 @@ impl Tokens {
             caption: Color32::from_rgb(0x80, 0x80, 0x80),
             field_hover_border: Color32::from_rgb(0xE0, 0xE0, 0xE0),
             focus: Color32::from_rgb(0xB8, 0x46, 0x0F),
+            selected_row: Color32::from_rgb(0xE5, 0xF4, 0xFF),
         }
     }
     pub fn dark() -> Self {
@@ -115,6 +118,7 @@ impl Tokens {
             caption: Color32::from_rgb(0xA6, 0xA6, 0xA6),
             field_hover_border: Color32::from_rgb(0x4D, 0x4D, 0x4D),
             focus: Color32::from_rgb(0xF5, 0x8A, 0x4B),
+            selected_row: Color32::from_rgb(0x2A, 0x45, 0x5C),
         }
     }
     pub fn for_brightness(b: Brightness) -> Self {
