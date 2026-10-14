@@ -278,7 +278,8 @@ pub struct SlideApp {
     pub media: media::MediaHost,
     pub status: Option<(String, f64)>,
     /// A brief notice over the bottom of the window (missing fonts on opening a file).
-    pub toast: Option<toast::Toast>,
+    /// Notices showing (see `toast.rs`).
+    pub toasts: Vec<toast::Toast>,
     /// Documents (by uid) whose missing fonts have been mentioned.
     fonts_noted: std::collections::HashSet<u64>,
     pub perf: Perf,
@@ -344,7 +345,7 @@ impl SlideApp {
             show: None,
             media: media::MediaHost::new(audio_out),
             status: None,
-            toast: None,
+            toasts: Vec::new(),
             fonts_noted: Default::default(),
             perf: Perf { frame_ms: 0.0, render_ms: 0.0, fps: 0.0 },
             synthetic: vec![],
@@ -411,7 +412,12 @@ impl SlideApp {
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
-        self.status = Some((msg.into(), now_ms()));
+        let msg = msg.into();
+        // The canvas layout has no status bar: the message is a notice there.
+        if self.ui.shell == Shell::Canvas && !msg.is_empty() {
+            toast::post(self, "DeckCraft", msg.clone(), false);
+        }
+        self.status = Some((msg, now_ms()));
     }
 
     /// Run a command by id (UI commands here, everything else in the engine). Errors show in the
@@ -1452,18 +1458,18 @@ mod tests {
             SlideApp::new(Session::with_new(), Services::default()),
         );
         harness.run_steps(2);
-        assert!(harness.state().toast.is_none(), "a new presentation has nothing to say");
+        assert!(harness.state().toasts.is_empty(), "a new presentation has nothing to say");
         harness.state_mut().session.execute("file.openBytes", &json!({"name": "a.pptx", "data": data})).unwrap();
         harness.run_steps(2);
-        let text = harness.state().toast.as_ref().map(|t| t.text.clone()).unwrap_or_default();
+        let text = harness.state().toasts.first().map(|t| t.text.clone()).unwrap_or_default();
         assert!(text.starts_with("Qqq Nonexistent Sans isn't installed"), "{text}");
         assert!(harness.query_by_label_contains("Qqq Nonexistent Sans isn't installed").is_some());
         // Closed, it stays closed for that document.
         harness.get_by_label("Close").click();
         harness.run_steps(2);
-        assert!(harness.state().toast.is_none());
+        assert!(harness.state().toasts.is_empty());
         harness.run_steps(2);
-        assert!(harness.state().toast.is_none());
+        assert!(harness.state().toasts.is_empty());
     }
 
     /// #17: Home created a new blank presentation instead of going to the start screen.

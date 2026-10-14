@@ -580,6 +580,11 @@ fn overlays(app: &mut SlideApp, ui: &Ui, painter: &egui::Painter, xf: Xf, t: &To
         let (lines, target) = app.session.measure_hover(xf.to_slide(h), 4.0 / xf.scale.max(0.01) as f64, cmd);
         crate::measure_overlay::draw(app, painter, xf, t, &lines, target);
     }
+    // ⌥ while dragging layers: live distances to their nearest neighbours (or the slide's edges).
+    if alt && app.session.tool.moving_ids().is_some() {
+        let lines = app.session.measure_drag();
+        crate::measure_overlay::draw(app, painter, xf, t, &lines, None);
+    }
     // Smart guides, marquee, previews.
     for g in &app.session.tool.guides {
         let (a, b) =

@@ -986,3 +986,30 @@ fn option_hover_measures_from_the_selection() {
     assert_eq!(lines.iter().filter(|m| m.len.is_some()).count(), 4);
     assert!(target.is_none());
 }
+
+#[test]
+fn inside_a_group_clicks_pick_its_layers_and_escape_steps_out() {
+    let mut s = session();
+    s.prefs.cmd_deep_select = true;
+    let a = s.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap();
+    let b = s.execute("shape.insert", &json!({"preset": "rect", "rect": [300, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap();
+    s.execute("selection.select", &json!({"ids": [a, b]})).unwrap();
+    s.execute("arrange.group", &json!({})).unwrap();
+    let group = s.doc().unwrap().selection.shapes[0].0 as u64;
+    let ev = |kind, x, y, cmd| PointerEvent { kind, x, y, mods: Mods { cmd, ..Mods::default() }, tol: 3.0 };
+    let click = |s: &mut Session, x, y, cmd| {
+        s.pointer(ev(PointerKind::Down, x, y, cmd)).unwrap();
+        s.pointer(ev(PointerKind::Up, x, y, cmd)).unwrap();
+    };
+    let selected = |s: &Session| s.doc().unwrap().selection.shapes.iter().map(|i| i.0 as u64).collect::<Vec<_>>();
+    click(&mut s, 140.0, 130.0, true);
+    assert_eq!(selected(&s), vec![a], "⌘-click goes in");
+    click(&mut s, 340.0, 130.0, false);
+    assert_eq!(selected(&s), vec![b], "a plain click on its sibling stays inside the group");
+    s.key("Escape", Mods::default()).unwrap();
+    assert_eq!(selected(&s), vec![group], "Esc selects the group");
+    s.key("Escape", Mods::default()).unwrap();
+    assert!(selected(&s).is_empty(), "and then nothing");
+    click(&mut s, 340.0, 130.0, false);
+    assert_eq!(selected(&s), vec![group], "outside the group's context a click picks the group");
+}

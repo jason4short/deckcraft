@@ -311,6 +311,10 @@ icons! {
     PanelRight => "panel-right",
     /// A projection screen on a stand: present the slides.
     Present => "present",
+    /// Layers list kinds, as canvas editors mark them: text (a T), a shape, a line.
+    LayerText => "layer-text",
+    LayerShape => "layer-shape",
+    LayerLine => "layer-line",
     /// A circular arrow: put back as it was (a placeholder onto its layout's position).
     Revert => "revert",
     /// A slide on an easel: a presentation (document tabs).
@@ -2363,6 +2367,12 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.seg((12.0, 15.5), (12.0, 20.0), K);
             p.seg((9.0, 20.0), (15.0, 20.0), K);
         }
+        I::LayerText => {
+            p.seg((6.0, 6.0), (18.0, 6.0), K);
+            p.seg((12.0, 6.0), (12.0, 19.0), K);
+        }
+        I::LayerShape => p.rect(5.0, 5.0, 19.0, 19.0, 2.0, N, K),
+        I::LayerLine => p.seg((5.0, 19.0), (19.0, 5.0), K),
         I::Revert => {
             // Three quarters of a circle, from the left over the top round to the bottom, with
             // the arrowhead at its start: turning back.

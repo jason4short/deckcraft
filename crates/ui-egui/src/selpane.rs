@@ -44,6 +44,26 @@ pub struct Row {
     pub parent: Option<u32>,
     /// The placeholder it is on the slide's layout ("Title", "Body text"…), shown after the name.
     pub tag: Option<String>,
+    /// What kind of layer it is, as a small icon before the name.
+    pub icon: crate::icons::Icon,
+}
+
+/// The icon a layer's row shows for its kind.
+pub fn kind_icon(sh: &Shape) -> crate::icons::Icon {
+    use crate::icons::Icon;
+    use deckcraft_model::ShapeKind;
+    match &sh.kind {
+        ShapeKind::Group { .. } => Icon::Group,
+        ShapeKind::Picture { .. } => Icon::Picture,
+        ShapeKind::Table(_) => Icon::Table,
+        ShapeKind::Chart(_) => Icon::Chart,
+        ShapeKind::Media(m) if !m.video => Icon::Audio,
+        ShapeKind::Media(_) => Icon::Video,
+        ShapeKind::Connector { .. } => Icon::LayerLine,
+        _ if sh.is_line() => Icon::LayerLine,
+        ShapeKind::Shape if sh.text_box || sh.ph.is_some() => Icon::LayerText,
+        _ => Icon::LayerShape,
+    }
 }
 
 /// The rows as listed: front-most first, children under their group unless it's folded.
@@ -63,6 +83,7 @@ pub fn rows(shapes: &[Shape], collapsed: &HashSet<u32>) -> Vec<Row> {
                 locked: sh.locked,
                 parent,
                 tag: sh.ph_type().map(|k| crate::props::kind_name(k.xml(), false)),
+                icon: kind_icon(sh),
             });
             if sh.is_group() && !collapsed.contains(&sh.id.0) {
                 rec(sh.children(), depth + 1, Some(sh.id.0), dim || sh.hidden, collapsed, out);
@@ -196,7 +217,17 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
                 }
             }
         }
-        let name_x = x0 + 16.0;
+        // The layer's kind, then its name.
+        let kind_r = Rect::from_center_size(pos2(x0 + 24.0, r.center().y), vec2(14.0, 14.0));
+        let kind_ink = if row.dimmed || row.hidden {
+            t.text_faint
+        } else if sel {
+            t.text
+        } else {
+            t.text_dim
+        };
+        icons::paint_mono(&painter, kind_r, row.icon, kind_ink, false);
+        let name_x = x0 + 38.0;
         // As in canvas editors: the eye at the right end, the lock before it.
         let eye = Rect::from_center_size(pos2(r.max.x - 14.0, r.center().y), vec2(16.0, 16.0));
         let lock = Rect::from_center_size(pos2(r.max.x - 38.0, r.center().y), vec2(16.0, 16.0));
@@ -238,7 +269,7 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
                 }
             }
             if marked.contains(&row.id) {
-                painter.circle_filled(pos2(name_x - 7.0, r.center().y), 2.5, t.accent);
+                painter.circle_filled(pos2(name_x - 4.0, r.center().y), 2.5, t.accent);
             }
         }
         // Eye and padlock: shown while the row is hovered, and always when hidden or locked.
