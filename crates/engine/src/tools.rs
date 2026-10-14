@@ -575,8 +575,9 @@ impl Session {
                     Some(Drag::Move { ids: ids_now, start, origs: origs2, moved: true, duplicate: false, enter_text: enter_text.filter(|_| false) });
             }
             Drag::Resize { id, handle, orig, start } => {
-                let nx = resize_box(&orig, handle, p - start, mods.shift || self.is_picture(id), mods.alt);
-                let nx = self.snap_resize(nx, &orig, handle, id, tol);
+                let keep = if self.prefs.group_keeps_aspect && self.is_group(id) { !mods.shift } else { mods.shift || self.is_picture(id) };
+                let nx = resize_box(&orig, handle, p - start, keep, mods.alt);
+                let nx = self.snap_resize(nx, &orig, handle, id, tol, keep);
                 self.set_xfrm(id, nx)?;
             }
             Drag::LineEnd { id, end, orig } => {
@@ -879,6 +880,10 @@ impl Session {
         }
     }
 
+    fn is_group(&self, id: ShapeId) -> bool {
+        self.active().and_then(|d| d.shape(id)).is_some_and(|s| s.is_group())
+    }
+
     fn is_picture(&self, id: ShapeId) -> bool {
         self.active().and_then(|d| d.shape(id)).is_some_and(|s| matches!(s.kind, ShapeKind::Picture { .. } | ShapeKind::Media(_)))
     }
@@ -1063,7 +1068,7 @@ impl Session {
         (off, guides)
     }
 
-    fn snap_resize(&mut self, x: Xfrm, _orig: &Xfrm, handle: u8, id: ShapeId, tol: f64) -> Xfrm {
+    fn snap_resize(&mut self, x: Xfrm, orig: &Xfrm, handle: u8, id: ShapeId, tol: f64, keep_aspect: bool) -> Xfrm {
         if x.rot != 0.0 {
             self.tool.guides.clear();
             return x;
@@ -1090,6 +1095,23 @@ impl Session {
         }
         nx.w = nx.w.max(0.0);
         nx.h = nx.h.max(0.0);
+        // Proportions kept: the snapped side leads, the other follows (from the fixed corner).
+        if keep_aspect && orig.h > 0.0 && orig.w > 0.0 && (off.x != 0.0 || off.y != 0.0) {
+            let ratio = orig.w / orig.h;
+            if off.x != 0.0 && (moves_left || moves_right) {
+                let h = nx.w / ratio;
+                if moves_top {
+                    nx.y += nx.h - h;
+                }
+                nx.h = h;
+            } else if moves_top || moves_bottom {
+                let w = nx.h * ratio;
+                if moves_left {
+                    nx.x += nx.w - w;
+                }
+                nx.w = w;
+            }
+        }
         self.tool.guides = guides;
         nx
     }

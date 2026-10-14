@@ -384,6 +384,7 @@ impl SlideApp {
     fn sync_shell_prefs(&mut self) {
         self.session.prefs.locked_click_through = self.ui.shell == Shell::Canvas;
         self.session.prefs.cmd_deep_select = self.ui.shell == Shell::Canvas;
+        self.session.prefs.group_keeps_aspect = self.ui.shell == Shell::Canvas;
     }
 
     /// Run `cmds` as one undo step named `label` (each command would make its own).

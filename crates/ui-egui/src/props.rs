@@ -739,9 +739,9 @@ fn layout(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, x: &Xfrm, boxes: &[(Shape
     caption(ui, "Dimensions");
     let u = units::length(app);
     let en = enabled(app, "shape.resize");
-    // Pictures keep their proportions unless asked not to (as their corner handles do); other
-    // layers don't. Each kind remembers its own setting.
-    let picture = matches!(sh.kind, ShapeKind::Picture { .. }) && boxes.len() < 2;
+    // Pictures and groups keep their proportions unless asked not to (as their handles do);
+    // other layers don't. Each kind remembers its own setting.
+    let picture = matches!(sh.kind, ShapeKind::Picture { .. } | ShapeKind::Group { .. }) && boxes.len() < 2;
     let lock_id = egui::Id::new(("props-constrain", picture));
     let lock = ui.ctx().data(|d| d.get_temp::<bool>(lock_id)).unwrap_or(picture);
     ui.horizontal(|ui| {

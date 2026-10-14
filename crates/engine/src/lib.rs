@@ -257,6 +257,9 @@ pub struct Prefs {
     /// ⌘-click selects the innermost layer under the pointer, inside groups (canvas editors'
     /// deep select; ⇧-click adds to the selection). Off, ⌘-click adds or removes, as in PowerPoint.
     pub cmd_deep_select: bool,
+    /// Dragging a group's handles keeps its proportions; ⇧ frees them (canvas editors). Off,
+    /// ⇧ keeps them, as in PowerPoint.
+    pub group_keeps_aspect: bool,
 }
 
 impl Default for Prefs {
@@ -273,6 +276,7 @@ impl Default for Prefs {
             recovery_minutes: 1.0,
             locked_click_through: false,
             cmd_deep_select: false,
+            group_keeps_aspect: false,
         }
     }
 }

@@ -936,3 +936,36 @@ fn a_grouped_layers_x_follows_the_group() {
     let inspect = s.execute("shape.inspect", &json!({"id": a})).unwrap();
     assert!((inspect["box"]["x"].as_f64().unwrap() - 50.0).abs() < 0.01, "{inspect}");
 }
+
+#[test]
+fn a_group_keeps_its_proportions_unless_shift_is_held() {
+    let mut s = session();
+    s.prefs.snap_to_grid = false;
+    s.prefs.smart_guides = false;
+    s.prefs.group_keeps_aspect = true;
+    let a = s.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 100, 50]})).unwrap()["id"].as_u64().unwrap();
+    let b = s.execute("shape.insert", &json!({"preset": "rect", "rect": [300, 100, 100, 50]})).unwrap()["id"].as_u64().unwrap();
+    s.execute("selection.select", &json!({"ids": [a, b]})).unwrap();
+    s.execute("arrange.group", &json!({})).unwrap();
+    let id = s.doc().unwrap().selection.shapes[0];
+    let size = |s: &Session| s.doc().unwrap().shape(id).unwrap().xfrm.unwrap();
+    let drag = |s: &mut Session, shift: bool, to: (f64, f64)| {
+        let ev = |kind, x, y| PointerEvent { kind, x, y, mods: Mods { shift, ..Mods::default() }, tol: 3.0 };
+        let x = size(s);
+        let (cx, cy) = (x.x + x.w, x.y + x.h);
+        s.pointer(ev(PointerKind::Down, cx, cy)).unwrap();
+        s.pointer(ev(PointerKind::Drag, cx + to.0, cy + to.1)).unwrap();
+        s.pointer(ev(PointerKind::Up, cx + to.0, cy + to.1)).unwrap();
+    };
+    let ratio = size(&s).w / size(&s).h;
+    drag(&mut s, false, (150.0, 0.0));
+    assert!((size(&s).w / size(&s).h - ratio).abs() < 0.01, "kept: {:?}", size(&s));
+    // Snapping to other things doesn't stretch it.
+    s.prefs.smart_guides = true;
+    s.prefs.snap_to_grid = true;
+    drag(&mut s, false, (37.0, 3.0));
+    assert!((size(&s).w / size(&s).h - ratio).abs() < 0.01, "kept while snapping: {:?}", size(&s));
+    let r2 = size(&s).w / size(&s).h;
+    drag(&mut s, true, (0.0, 80.0));
+    assert!((size(&s).w / size(&s).h - r2).abs() > 0.05, "⇧ frees it: {:?}", size(&s));
+}
