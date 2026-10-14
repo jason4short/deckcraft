@@ -309,6 +309,8 @@ icons! {
     /// A window with its left (or right) column marked: show or hide that side panel.
     PanelLeft => "panel-left",
     PanelRight => "panel-right",
+    /// A projection screen on a stand: present the slides.
+    Present => "present",
     /// A circular arrow: put back as it was (a placeholder onto its layout's position).
     Revert => "revert",
     /// A slide on an easel: a presentation (document tabs).
@@ -2354,6 +2356,12 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.rect(3.5, 5.0, 20.5, 19.0, 2.0, N, K);
             let x = if matches!(icon, I::PanelLeft) { 9.0 } else { 15.0 };
             p.seg((x, 5.0), (x, 19.0), K);
+        }
+        I::Present => {
+            p.seg((3.0, 4.0), (21.0, 4.0), K);
+            p.rect(4.5, 4.0, 19.5, 15.5, 0.5, N, K);
+            p.seg((12.0, 15.5), (12.0, 20.0), K);
+            p.seg((9.0, 20.0), (15.0, 20.0), K);
         }
         I::Revert => {
             // Three quarters of a circle, from the left over the top round to the bottom, with

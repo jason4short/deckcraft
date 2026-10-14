@@ -48,7 +48,7 @@ fn the_layout_choice_is_kept_with_the_ui_state() {
 fn the_canvas_shell_replaces_the_ribbon_with_sidebar_inspector_and_toolbar() {
     let h = harness(Shell::Canvas);
     assert!(h.query_by_label("File").is_none(), "no ribbon tabs");
-    for label in ["Layers", "Design", "Animate", "Export", "Select (V)", "Text box (T)"] {
+    for label in ["Layers", "Sort", "Animate", "Present", "Select (V)", "Text box (T)"] {
         assert!(h.query_by_label(label).is_some(), "`{label}` is shown");
     }
     assert!(h.state().slide_rect.is_some(), "the slide is on the canvas");
@@ -72,15 +72,21 @@ fn switching_layouts_leaves_the_presentation_alone() {
 }
 
 #[test]
-fn inspector_tabs_switch_between_design_and_animate() {
+fn the_panel_buttons_animate_sort_and_present() {
     let mut h = harness(Shell::Canvas);
     assert_eq!(h.state().ui.inspector_tab, "design");
     h.get_by_label("Animate").click();
     h.run_steps(2);
     assert_eq!(h.state().ui.inspector_tab, "animate");
-    h.get_by_label("Design").click();
+    h.get_by_label("Animate").click();
     h.run_steps(2);
-    assert_eq!(h.state().ui.inspector_tab, "design");
+    assert_eq!(h.state().ui.inspector_tab, "design", "pressed again, back to the design panel");
+    h.get_by_label("Sort").click();
+    h.run_steps(2);
+    assert_eq!(h.state().ui.view, crate::ViewMode::Sorter);
+    h.get_by_label("Sort").click();
+    h.run_steps(2);
+    assert_eq!(h.state().ui.view, crate::ViewMode::Normal);
 }
 
 #[test]
