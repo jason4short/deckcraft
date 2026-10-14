@@ -292,6 +292,12 @@ icons! {
     PadH => "pad-h",
     PadV => "pad-v",
     PadSides => "pad-sides",
+    /// Corner radius: each corner on its own, and the corners themselves.
+    Corners => "corners",
+    CornerTl => "corner-tl",
+    CornerTr => "corner-tr",
+    CornerBr => "corner-br",
+    CornerBl => "corner-bl",
     Eye => "eye",
     EyeOff => "eye-off",
     Close => "close",
@@ -2308,6 +2314,30 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.seg((4.0, 9.0), (7.0, 10.0), K);
             p.seg((15.0, 20.0), (14.0, 17.0), K);
             p.seg((20.0, 15.0), (17.0, 14.0), K);
+        }
+        I::CornerTl | I::CornerTr | I::CornerBr | I::CornerBl => {
+            // A rounded corner, drawn top-left and mirrored into place.
+            let mut pts = vec![(5.0, 19.0), (5.0, 12.0)];
+            pts.extend(arc_pts((12.0, 12.0), 7.0, 7.0, 180.0, 270.0));
+            pts.push((19.0, 5.0));
+            let (fx, fy) = match icon {
+                I::CornerTr => (true, false),
+                I::CornerBr => (true, true),
+                I::CornerBl => (false, true),
+                _ => (false, false),
+            };
+            let pts: Vec<P2> = pts.into_iter().map(|(x, y)| (if fx { 24.0 - x } else { x }, if fy { 24.0 - y } else { y })).collect();
+            p.line(&pts, K);
+        }
+        I::Corners => {
+            // The four corners of a rounded square, apart.
+            for (fx, fy) in [(false, false), (true, false), (true, true), (false, true)] {
+                let mut pts = vec![(4.0, 9.0), (4.0, 7.5)];
+                pts.extend(arc_pts((7.5, 7.5), 3.5, 3.5, 180.0, 270.0));
+                pts.push((9.0, 4.0));
+                let pts: Vec<P2> = pts.into_iter().map(|(x, y)| (if fx { 24.0 - x } else { x }, if fy { 24.0 - y } else { y })).collect();
+                p.line(&pts, K);
+            }
         }
         I::PadH | I::PadV | I::PadSides => {
             p.rect(3.5, 3.5, 20.5, 20.5, 2.5, N, K);

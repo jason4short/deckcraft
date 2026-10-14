@@ -185,7 +185,8 @@ fn spacing_is_the_gap_between_neighbours_and_sets_them_equal() {
     assert_eq!(gaps(&boxes, true), vec![30.0, 100.0]);
     assert_eq!(common(gaps(&boxes, true)), None, "unequal gaps are Mixed");
     assert_eq!(spaced(&boxes, true, 20.0), vec![(ShapeId(3), 120.0), (ShapeId(1), 210.0)]);
-    assert_eq!(common([20.0, 20.2]), Some(20.0));
+    assert_eq!(common([20.0, 20.001]), Some(20.0));
+    assert_eq!(common([20.0, 20.5]), None, "a typed half pixel counts");
 }
 
 fn run_colors(app: &SlideApp, id: u32) -> Vec<Option<Fill>> {
@@ -291,4 +292,106 @@ fn padding_sets_the_text_box_insets() {
     assert!(h.query_by_label("Padding for each side").is_some());
     click(&mut h, "Padding for each side");
     assert!(h.query_by_label("Horizontal and vertical padding").is_some(), "each side shown");
+}
+
+fn arrow(h: &mut Harness<'static, SlideApp>, key: egui::Key, modifiers: egui::Modifiers) {
+    h.event(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+    h.event(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
+    h.run_steps(3);
+}
+
+/// The first field (top of the panel down) showing `value`.
+fn focus_field(h: &mut Harness<'static, SlideApp>, value: &str) {
+    h.query_all_by_value(value).next().unwrap_or_else(|| panic!("no field reads {value}")).click();
+    h.run_steps(3);
+}
+
+fn rect_selected(h: &mut Harness<'static, SlideApp>, preset: &str) -> u32 {
+    let app = h.state_mut();
+    // 150 × 60 pt: W reads 300 px, H 120.
+    let id = app.run("shape.insert", json!({"preset": preset, "rect": [100, 100, 150, 60]})).unwrap()["id"].as_u64().unwrap() as u32;
+    app.run("selection.select", json!({"ids": [id]})).unwrap();
+    h.run_steps(3);
+    id
+}
+
+#[test]
+fn arrow_keys_step_a_focused_field_by_one_or_ten() {
+    let mut h = harness();
+    let id = rect_selected(&mut h, "rect");
+    focus_field(&mut h, "300");
+    arrow(&mut h, egui::Key::ArrowUp, egui::Modifiers::NONE);
+    assert_eq!(shape(h.state(), id).xfrm.unwrap().w, 150.5, "301 px");
+    arrow(&mut h, egui::Key::ArrowUp, egui::Modifiers::SHIFT);
+    assert_eq!(shape(h.state(), id).xfrm.unwrap().w, 155.5, "311 px");
+    arrow(&mut h, egui::Key::ArrowDown, egui::Modifiers::NONE);
+    assert_eq!(shape(h.state(), id).xfrm.unwrap().w, 155.0, "310 px");
+    assert_eq!(shape(h.state(), id).xfrm.unwrap().x, 100.0, "the arrows didn't nudge the shape");
+}
+
+#[test]
+fn fields_keep_to_their_range() {
+    let mut h = harness();
+    select_box(&mut h, "rect");
+    focus_field(&mut h, "100%");
+    arrow(&mut h, egui::Key::ArrowUp, egui::Modifiers::SHIFT);
+    let sc = deckcraft_model::Theme::default().colors;
+    let d = h.state().session.active().unwrap();
+    assert_eq!(opacity_of(d.selected_shapes()[0], &sc), 1.0, "opacity stops at 100%");
+}
+
+#[test]
+fn a_picture_keeps_its_proportions_by_default() {
+    let mut h = harness();
+    let png = deckcraft_render::Image { width: 4, height: 2, pixels: vec![200; 32] }.to_png();
+    let id = h
+        .state_mut()
+        .run("insert.picture", json!({"name": "p.png", "data": deckcraft_engine::cmd::base64_encode(&png), "rect": [100, 100, 150, 75]}))
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap() as u32;
+    h.run_steps(3);
+    let x = shape(h.state(), id).xfrm.unwrap();
+    let w_px = format!("{}", (x.w * 2.0).round());
+    focus_field(&mut h, &w_px);
+    arrow(&mut h, egui::Key::ArrowUp, egui::Modifiers::SHIFT);
+    let y = shape(h.state(), id).xfrm.unwrap();
+    assert!((y.w / y.h - x.w / x.h).abs() < 1e-6, "the height followed: {x:?} → {y:?}");
+}
+
+#[test]
+fn corner_radii_round_trip_through_the_presets_pptx_has() {
+    let mut s = Session::with_new();
+    let id = s.execute("shape.insert", &json!({"preset": "rect", "rect": [0, 0, 200, 100]})).unwrap()["id"].as_u64().unwrap();
+    let get = |s: &Session| {
+        let st = s.doc().unwrap();
+        let sh = st.shape(ShapeId(id as u32)).unwrap().clone();
+        let x = deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, &sh);
+        corners(&sh, &x).unwrap().map(|v| (v * 100.0).round() / 100.0)
+    };
+    assert_eq!(get(&s), [0.0; 4], "a rectangle has square corners");
+    for want in [[10.0; 4], [10.0, 10.0, 4.0, 4.0], [10.0, 4.0, 10.0, 4.0], [0.0, 12.0, 0.0, 0.0], [0.0; 4]] {
+        let now = match &s.doc().unwrap().shape(ShapeId(id as u32)).unwrap().geom {
+            Geom::Preset { name, .. } => name.clone(),
+            _ => unreachable!(),
+        };
+        for (cmd, p) in corner_commands(ShapeId(id as u32), &now, want, 100.0).unwrap() {
+            s.execute(cmd, &p).unwrap();
+        }
+        assert_eq!(get(&s), want);
+    }
+    assert!(corner_preset([1.0, 2.0, 3.0, 4.0], 100.0).is_none(), "four different corners don't exist in PPTX");
+    assert_eq!(corner_preset([60.0; 4], 100.0).unwrap().1, vec![50_000.0], "at most half the shorter side");
+}
+
+#[test]
+fn a_rectangle_gets_a_corner_radius_and_each_corner_on_its_own() {
+    let mut h = harness();
+    rect_selected(&mut h, "rect");
+    assert!(h.query_by_label("Each corner on its own").is_some());
+    click(&mut h, "Each corner on its own");
+    assert!(h.query_by_label("One radius for every corner").is_some(), "four fields shown");
+    let mut h = harness();
+    text_box(&mut h);
+    assert!(h.query_by_label("Each corner on its own").is_none(), "a text box has no corners to round");
 }

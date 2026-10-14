@@ -147,21 +147,46 @@ enum Prefix {
 /// A grey number field. Dragging the prefix scrubs the value (`step` per point dragged); typing
 /// a number and pressing Enter or leaving the field sets it. Returns the new value when one is set.
 #[allow(clippy::too_many_arguments)]
-fn number(ui: &mut Ui, id: &str, prefix: Prefix, value: f64, suffix: &str, width: f32, step: f64, en: bool) -> Option<f64> {
-    number_or_mixed(ui, id, prefix, Some(value), suffix, width, step, en)
+fn number(ui: &mut Ui, id: &str, prefix: Prefix, value: f64, suffix: &str, width: f32, step: f64, range: Range, en: bool) -> Option<f64> {
+    number_or_mixed(ui, id, prefix, Some(value), suffix, width, step, range, en)
 }
+
+/// The values a field takes (dragging, arrow keys and typing all stay inside): `(min, max)`.
+type Range = (f64, f64);
+const ANY: Range = (-1e6, 1e6);
+const NOT_NEGATIVE: Range = (0.0, 1e6);
+const PERCENT: Range = (0.0, 100.0);
+/// Width and height: at least one unit.
+const SIZE: Range = (1.0, 1e6);
 
 /// The value the selected layers share, or None (shown as Mixed) when they differ.
 fn common(values: impl IntoIterator<Item = f64>) -> Option<f64> {
     let mut it = values.into_iter();
     let first = it.next()?;
-    it.all(|v| (v - first).abs() < 0.5).then_some(first)
+    it.all(|v| (v - first).abs() < 0.005).then_some(first)
+}
+
+/// A value as a field shows it: to two decimals (whole numbers from dragging stay whole; a
+/// typed 10.5 stays 10.5).
+fn two(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
 }
 
 /// `number` for a value the selected layers may not share (`None`: shown as Mixed, and typing a
 /// number sets it for all of them; scrubbing needs a value to start from).
 #[allow(clippy::too_many_arguments)]
-fn number_or_mixed(ui: &mut Ui, id: &str, prefix: Prefix, value: Option<f64>, suffix: &str, width: f32, step: f64, en: bool) -> Option<f64> {
+fn number_or_mixed(
+    ui: &mut Ui,
+    id: &str,
+    prefix: Prefix,
+    value: Option<f64>,
+    suffix: &str,
+    width: f32,
+    step: f64,
+    (lo, hi): Range,
+    en: bool,
+) -> Option<f64> {
+    let clamp = |v: f64| v.clamp(lo, hi.max(lo));
     let mixed = value.is_none();
     let value = value.unwrap_or(0.0);
     let t = Tokens::get(ui.ctx());
@@ -178,10 +203,11 @@ fn number_or_mixed(ui: &mut Ui, id: &str, prefix: Prefix, value: Option<f64>, su
     if scrub.dragged() {
         let acc = ui.data_mut(|d| d.get_temp::<f64>(skey)).unwrap_or(value) + scrub.drag_delta().x as f64 * step;
         ui.data_mut(|d| d.insert_temp(skey, acc));
-        shown = acc;
+        // Scrubbing lands on whole numbers; a typed value may have decimals.
+        shown = clamp(acc.round());
     }
     if scrub.drag_stopped() {
-        out = ui.data_mut(|d| d.remove_temp::<f64>(skey));
+        out = ui.data_mut(|d| d.remove_temp::<f64>(skey)).map(|v| clamp(v.round()));
         if let Some(v) = out {
             shown = v;
         }
@@ -194,8 +220,19 @@ fn number_or_mixed(ui: &mut Ui, id: &str, prefix: Prefix, value: Option<f64>, su
         Prefix::Icon(i) => icons::paint(ui.painter(), Rect::from_center_size(pre.center(), vec2(14.0, 14.0)), i, ink, !en),
     }
     let tkey = ui.id().with((id, "typing"));
+    let edit_id = ui.id().with((id, "edit"));
     let mut text: String =
         ui.data_mut(|d| d.get_temp(tkey)).unwrap_or_else(|| if mixed { String::new() } else { format!("{}{suffix}", widgets::fmt_num(shown, "")) });
+    // ↑ / ↓ (⇧: by ten) while typing: applied at once, and the field keeps the keyboard. A Mixed
+    // field steps from a number typed into it.
+    if en
+        && let Some(d) = widgets::arrow_step(ui, edit_id, step)
+        && let Some(base) = widgets::parse_num(&text).or((!mixed).then_some(value))
+    {
+        let v = clamp(base + d);
+        text = format!("{}{suffix}", widgets::fmt_num(v, ""));
+        out = Some(v);
+    }
     let er = Rect::from_min_max(pos2(pre.max.x, r.min.y), r.max).shrink2(vec2(2.0, 6.0));
     // In a child area, so the field doesn't move the row's cursor.
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(er).layout(egui::Layout::left_to_right(egui::Align::Center)));
@@ -206,20 +243,19 @@ fn number_or_mixed(ui: &mut Ui, id: &str, prefix: Prefix, value: Option<f64>, su
             .font(theme::font(13.0))
             .hint_text(if mixed { "Mixed" } else { "" })
             .interactive(en)
-            .id(ui.id().with((id, "edit"))),
+            .id(edit_id),
     );
     if te.has_focus() {
         ui.data_mut(|d| d.insert_temp(tkey, text.clone()));
     } else {
         ui.data_mut(|d| d.remove::<String>(tkey));
     }
-    if te.lost_focus() {
-        let num: String = text.chars().filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-').collect();
-        if let Ok(v) = num.parse::<f64>()
-            && (mixed || (v - value).abs() > 1e-9)
-        {
-            out = Some(v);
-        }
+    if te.lost_focus()
+        && out.is_none()
+        && let Some(v) = widgets::parse_num(&text).map(clamp)
+        && (mixed || (v - value).abs() > 1e-9)
+    {
+        out = Some(v);
     }
     out
 }
@@ -379,12 +415,12 @@ fn position(app: &mut SlideApp, ui: &mut Ui, x: &Xfrm, boxes: &[(ShapeId, Xfrm)]
     caption(ui, "Position");
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
-        let cx = common(boxes.iter().map(|b| u.show(b.1.x).round()));
-        if let Some(v) = number_or_mixed(ui, "x", Prefix::Text("X"), cx, "", c, 1.0, en) {
+        let cx = common(boxes.iter().map(|b| two(u.show(b.1.x))));
+        if let Some(v) = number_or_mixed(ui, "x", Prefix::Text("X"), cx, "", c, 1.0, ANY, en) {
             run(app, "shape.move", json!({"x": u.to_pt(v)}));
         }
-        let cy = common(boxes.iter().map(|b| u.show(b.1.y).round()));
-        if let Some(v) = number_or_mixed(ui, "y", Prefix::Text("Y"), cy, "", c, 1.0, en) {
+        let cy = common(boxes.iter().map(|b| two(u.show(b.1.y))));
+        if let Some(v) = number_or_mixed(ui, "y", Prefix::Text("Y"), cy, "", c, 1.0, ANY, en) {
             run(app, "shape.move", json!({"y": u.to_pt(v)}));
         }
     });
@@ -392,7 +428,7 @@ fn position(app: &mut SlideApp, ui: &mut Ui, x: &Xfrm, boxes: &[(ShapeId, Xfrm)]
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
         let rot = common(boxes.iter().map(|b| (b.1.rot * 10.0).round() / 10.0));
-        if let Some(v) = number_or_mixed(ui, "rot", Prefix::Icon(Icon::Rotate), rot, "°", c, 1.0, enabled(app, "shape.rotate")) {
+        if let Some(v) = number_or_mixed(ui, "rot", Prefix::Icon(Icon::Rotate), rot, "°", c, 1.0, (-360.0, 360.0), enabled(app, "shape.rotate")) {
             run(app, "shape.rotate", json!({"deg": v.rem_euclid(360.0)}));
         }
         let items =
@@ -430,7 +466,7 @@ pub fn insets(app: &SlideApp, sh: &Shape) -> [f64; 4] {
 /// Padding: horizontal (left and right) and vertical (top and bottom), or each side.
 fn padding(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
     let u = units::small(app);
-    let [l, t, r, b] = insets(app, sh).map(|v| u.show(v).round());
+    let [l, t, r, b] = insets(app, sh).map(|v| two(u.show(v)));
     let c = cols(ui);
     let en = enabled(app, "format.margins");
     let sides_id = egui::Id::new("props-padding-sides");
@@ -457,10 +493,10 @@ fn padding(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
     if !sides {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
-            if let Some(v) = number_or_mixed(ui, "pad-h", Prefix::Icon(Icon::PadH), common([l, r]), "", c, 1.0, en) {
+            if let Some(v) = number_or_mixed(ui, "pad-h", Prefix::Icon(Icon::PadH), common([l, r]), "", c, 1.0, NOT_NEGATIVE, en) {
                 set(app, &["left", "right"], v);
             }
-            if let Some(v) = number_or_mixed(ui, "pad-v", Prefix::Icon(Icon::PadV), common([t, b]), "", c, 1.0, en) {
+            if let Some(v) = number_or_mixed(ui, "pad-v", Prefix::Icon(Icon::PadV), common([t, b]), "", c, 1.0, NOT_NEGATIVE, en) {
                 set(app, &["top", "bottom"], v);
             }
             toggle(ui);
@@ -473,7 +509,7 @@ fn padding(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             for (id, label, key, v) in pair {
-                if let Some(nv) = number(ui, id, Prefix::Text(label), v, "", c, 1.0, en) {
+                if let Some(nv) = number(ui, id, Prefix::Text(label), v, "", c, 1.0, NOT_NEGATIVE, en) {
                     set(app, &[key], nv);
                 }
             }
@@ -565,16 +601,19 @@ fn layout(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, x: &Xfrm, boxes: &[(Shape
     caption(ui, "Dimensions");
     let u = units::length(app);
     let en = enabled(app, "shape.resize");
-    let lock_id = egui::Id::new("props-constrain");
-    let lock = ui.ctx().data(|d| d.get_temp::<bool>(lock_id)).unwrap_or(false);
+    // Pictures keep their proportions unless asked not to (as their corner handles do); other
+    // layers don't. Each kind remembers its own setting.
+    let picture = matches!(sh.kind, ShapeKind::Picture { .. }) && boxes.len() < 2;
+    let lock_id = egui::Id::new(("props-constrain", picture));
+    let lock = ui.ctx().data(|d| d.get_temp::<bool>(lock_id)).unwrap_or(picture);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
-        let w = if boxes.len() > 1 { common(boxes.iter().map(|b| u.show(b.1.w).round())) } else { Some(u.show(x.w).round()) };
-        if let Some(v) = number_or_mixed(ui, "w", Prefix::Text("W"), w, "", c, 1.0, en) {
+        let w = if boxes.len() > 1 { common(boxes.iter().map(|b| two(u.show(b.1.w)))) } else { Some(two(u.show(x.w))) };
+        if let Some(v) = number_or_mixed(ui, "w", Prefix::Text("W"), w, "", c, 1.0, SIZE, en) {
             run(app, "shape.resize", json!({"w": u.to_pt(v).max(1.0), "lockAspect": lock}));
         }
-        let h = if boxes.len() > 1 { common(boxes.iter().map(|b| u.show(b.1.h).round())) } else { Some(u.show(x.h).round()) };
-        if let Some(v) = number_or_mixed(ui, "h", Prefix::Text("H"), h, "", c, 1.0, en) {
+        let h = if boxes.len() > 1 { common(boxes.iter().map(|b| two(u.show(b.1.h)))) } else { Some(two(u.show(x.h))) };
+        if let Some(v) = number_or_mixed(ui, "h", Prefix::Text("H"), h, "", c, 1.0, SIZE, en) {
             run(app, "shape.resize", json!({"h": u.to_pt(v).max(1.0), "lockAspect": lock}));
         }
         let t = Tokens::get(ui.ctx());
@@ -597,8 +636,8 @@ fn layout(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, x: &Xfrm, boxes: &[(Shape
             for (horizontal, id, icon, label) in
                 [(true, "gap-x", Icon::DistributeH, "Horizontal Spacing"), (false, "gap-y", Icon::DistributeV, "Vertical Spacing")]
             {
-                let cur = common(gaps(boxes, horizontal).into_iter().map(|g| u.show(g).round()));
-                if let Some(v) = number_or_mixed(ui, id, Prefix::Icon(icon), cur, "", c, 1.0, en) {
+                let cur = common(gaps(boxes, horizontal).into_iter().map(|g| two(u.show(g))));
+                if let Some(v) = number_or_mixed(ui, id, Prefix::Icon(icon), cur, "", c, 1.0, ANY, en) {
                     let key = if horizontal { "x" } else { "y" };
                     let moves = spaced(boxes, horizontal, u.to_pt(v));
                     app.run_as_one(label, moves.into_iter().map(|(id, at)| ("shape.move", json!({"ids": [id], key: at}))).collect());
@@ -625,6 +664,69 @@ pub fn corner_radius(sh: &Shape, x: &Xfrm) -> Option<f64> {
     (name == "roundRect").then(|| adj.first().copied().unwrap_or(16667.0) / 100_000.0 * x.w.min(x.h))
 }
 
+/// A rectangle's corner radii in points, clockwise from the top left, when PPTX can round it:
+/// a rectangle (square corners) or one of the rounded rectangles (`roundRect`, `round1Rect`,
+/// `round2SameRect`, `round2DiagRect`). Text boxes and placeholders have none.
+pub fn corners(sh: &Shape, x: &Xfrm) -> Option<[f64; 4]> {
+    if !matches!(sh.kind, ShapeKind::Shape) || sh.text_box || sh.ph.is_some() {
+        return None;
+    }
+    let Geom::Preset { name, adj } = &sh.geom else { return None };
+    let min = x.w.min(x.h);
+    let a = |i: usize, default: f64| adj.get(i).copied().unwrap_or(default).clamp(0.0, 50_000.0) / 100_000.0 * min;
+    Some(match name.as_str() {
+        "rect" => [0.0; 4],
+        "roundRect" => [a(0, 16_667.0); 4],
+        "round1Rect" => [0.0, a(0, 16_667.0), 0.0, 0.0],
+        "round2SameRect" => {
+            let (top, bottom) = (a(0, 16_667.0), a(1, 0.0));
+            [top, top, bottom, bottom]
+        }
+        "round2DiagRect" => {
+            let (p, q) = (a(0, 16_667.0), a(1, 0.0));
+            [p, q, p, q]
+        }
+        _ => return None,
+    })
+}
+
+/// The preset and adjustments (file units) that round a rectangle's corners as `r` (points,
+/// clockwise from the top left) when its shorter side is `min`, if PPTX has one: all four equal,
+/// the top pair and the bottom pair, the diagonals, or the top-right corner alone.
+pub fn corner_preset(r: [f64; 4], min: f64) -> Option<(&'static str, Vec<f64>)> {
+    let adj = |v: f64| if min > 0.0 { (v / min * 100_000.0).clamp(0.0, 50_000.0).round() } else { 0.0 };
+    let eq = |a: f64, b: f64| (a - b).abs() < 0.01;
+    let [tl, tr, br, bl] = r;
+    if r.iter().all(|v| eq(*v, 0.0)) {
+        Some(("rect", vec![]))
+    } else if eq(tl, tr) && eq(tr, br) && eq(br, bl) {
+        Some(("roundRect", vec![adj(tl)]))
+    } else if eq(tl, tr) && eq(br, bl) {
+        Some(("round2SameRect", vec![adj(tl), adj(br)]))
+    } else if eq(tl, br) && eq(tr, bl) {
+        Some(("round2DiagRect", vec![adj(tl), adj(tr)]))
+    } else if eq(tl, 0.0) && eq(br, 0.0) && eq(bl, 0.0) {
+        Some(("round1Rect", vec![adj(tr)]))
+    } else {
+        None
+    }
+}
+
+/// The commands that round shape `id` (preset `now`) as `r`, or why PPTX can't.
+fn corner_commands(id: ShapeId, now: &str, r: [f64; 4], min: f64) -> Result<Vec<(&'static str, Value)>, String> {
+    let (preset, adj) = corner_preset(r, min).ok_or_else(|| {
+        "PowerPoint can't round those corners: make all four equal, the top and bottom pairs, the diagonal pairs, or only the top right".to_string()
+    })?;
+    let mut cmds = vec![];
+    if preset != now {
+        cmds.push(("shape.change", json!({"preset": preset, "ids": [id]})));
+    }
+    for (i, v) in adj.into_iter().enumerate() {
+        cmds.push(("shape.adjust", json!({"index": i, "value": v, "ids": [id]})));
+    }
+    Ok(cmds)
+}
+
 fn appearance(app: &mut SlideApp, ui: &mut Ui, shapes: &[Shape], boxes: &[(ShapeId, Xfrm)]) {
     // Any shown layer: the eye hides them all.
     let visible = shapes.iter().any(|s| !s.hidden);
@@ -639,9 +741,25 @@ fn appearance(app: &mut SlideApp, ui: &mut Ui, shapes: &[Shape], boxes: &[(Shape
     let has_opacity = |sh: &Shape| picture(sh) || matches!(sh.fill, Some(Fill::Solid { .. } | Fill::Gradient(_) | Fill::Picture(_)));
     let pictures: Vec<ShapeId> = shapes.iter().filter(|s| picture(s)).map(|s| s.id).collect();
     let filled: Vec<ShapeId> = shapes.iter().filter(|s| !picture(s) && has_opacity(s)).map(|s| s.id).collect();
-    // Rounded rectangles, with their corner radius in points.
-    let radii: Vec<(ShapeId, f64, f64)> =
-        shapes.iter().zip(boxes).filter_map(|(sh, (_, x))| corner_radius(sh, x).map(|r| (sh.id, r, x.w.min(x.h)))).collect();
+    // Rectangles, with their preset, corner radii in points and shorter side.
+    let radii: Vec<(ShapeId, String, [f64; 4], f64)> = shapes
+        .iter()
+        .zip(boxes)
+        .filter_map(|(sh, (_, x))| {
+            let name = match &sh.geom {
+                Geom::Preset { name, .. } => name.clone(),
+                Geom::Custom { .. } => return None,
+            };
+            corners(sh, x).map(|r| (sh.id, name, r, x.w.min(x.h)))
+        })
+        .collect();
+    let u = units::small(app);
+    // The largest radius that fits: half the shorter side (of the smallest, for several).
+    let max_radius = radii.iter().map(|r| two(u.show(r.3 / 2.0))).fold(f64::INFINITY, f64::min).min(1e6);
+    let each_id = egui::Id::new("props-corners-each");
+    // Each corner on its own when asked for, or when one shape's corners already differ.
+    let uneven = radii.len() == 1 && radii.first().is_some_and(|r| common(r.2).is_none());
+    let each = ui.ctx().data(|d| d.get_temp::<bool>(each_id)).unwrap_or(uneven) && radii.len() == 1;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = GAP;
         ui.vertical(|ui| {
@@ -649,7 +767,9 @@ fn appearance(app: &mut SlideApp, ui: &mut Ui, shapes: &[Shape], boxes: &[(Shape
             caption(ui, "Opacity");
             let cur = common(shapes.iter().filter(|s| has_opacity(s)).map(|s| (opacity_of(s, &sc) * 100.0).round()));
             let en = !pictures.is_empty() || !filled.is_empty();
-            if let Some(v) = number_or_mixed(ui, "opacity", Prefix::Icon(Icon::Transparency), if en { cur } else { Some(100.0) }, "%", c, 1.0, en) {
+            if let Some(v) =
+                number_or_mixed(ui, "opacity", Prefix::Icon(Icon::Transparency), if en { cur } else { Some(100.0) }, "%", c, 1.0, PERCENT, en)
+            {
                 let tr = 1.0 - v.clamp(0.0, 100.0) / 100.0;
                 let mut cmds = vec![];
                 if !pictures.is_empty() {
@@ -663,21 +783,59 @@ fn appearance(app: &mut SlideApp, ui: &mut Ui, shapes: &[Shape], boxes: &[(Shape
         });
         ui.vertical(|ui| {
             caption(ui, "Corner radius");
-            let u = units::small(app);
-            let shown = if radii.is_empty() { Some(0.0) } else { common(radii.iter().map(|r| u.show(r.1).round())) };
-            if let Some(v) = number_or_mixed(ui, "radius", Prefix::Icon(Icon::FitSmall), shown, "", c, 1.0, !radii.is_empty()) {
+            let shown = if radii.is_empty() { Some(0.0) } else { common(radii.iter().flat_map(|r| r.2).map(|v| two(u.show(v)))) };
+            if let Some(v) =
+                number_or_mixed(ui, "radius", Prefix::Icon(Icon::FitSmall), shown, "", c, 1.0, (0.0, max_radius), !radii.is_empty() && !each)
+            {
                 let r = u.to_pt(v).max(0.0);
-                let cmds = radii
-                    .iter()
-                    .filter(|x| x.2 > 0.0)
-                    .map(|(id, _, min)| {
-                        ("shape.adjust", json!({"index": 0, "value": (r / min * 100_000.0).clamp(0.0, 50_000.0).round(), "ids": [id]}))
-                    })
-                    .collect();
+                let mut cmds = vec![];
+                for (id, now, _, min) in &radii {
+                    cmds.extend(corner_commands(*id, now, [r; 4], *min).unwrap_or_default());
+                }
                 app.run_as_one("Corner Radius", cmds);
             }
         });
+        if radii.len() == 1 {
+            let tk = Tokens::get(ui.ctx());
+            let resp = icon_button(ui, Icon::Corners, if each { "One radius for every corner" } else { "Each corner on its own" }, true);
+            if each {
+                ui.painter().rect_stroke(resp.rect, CornerRadius::same(5), Stroke::new(1.0, tk.border), egui::StrokeKind::Inside);
+            }
+            if resp.clicked() {
+                ui.ctx().data_mut(|d| d.insert_temp(each_id, !each));
+            }
+        }
     });
+    // Each corner: top left, top right / bottom left, bottom right, as in canvas editors.
+    if let (true, Some((id, now, r, min))) = (each, radii.first()) {
+        let mut set = None;
+        for row in [
+            [(0, Icon::CornerTl, "Top left"), (1, Icon::CornerTr, "Top right")],
+            [(3, Icon::CornerBl, "Bottom left"), (2, Icon::CornerBr, "Bottom right")],
+        ] {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = GAP;
+                for (k, icon, label) in row {
+                    let v = r.get(k).copied().unwrap_or(0.0);
+                    if let Some(nv) =
+                        number(ui, &format!("corner-{k}"), Prefix::Icon(icon), two(u.show(v)), "", c, 1.0, (0.0, two(u.show(min / 2.0))), true)
+                    {
+                        let mut nr = *r;
+                        if let Some(slot) = nr.get_mut(k) {
+                            *slot = u.to_pt(nv).max(0.0);
+                        }
+                        set = Some((nr, label));
+                    }
+                }
+            });
+        }
+        if let Some((nr, _)) = set {
+            match corner_commands(*id, now, nr, *min) {
+                Ok(cmds) => app.run_as_one("Corner Radius", cmds),
+                Err(e) => app.set_status(e),
+            }
+        }
+    }
 }
 
 // ----- Typography -----------------------------------------------------------------------------
@@ -766,7 +924,7 @@ fn style_chip(app: &mut SlideApp, ui: &mut Ui, st: &Value, en: bool, current: &s
         Some(v) if v.get("kind").and_then(Value::as_str) == Some("pct") => v.get("v").and_then(Value::as_f64).unwrap_or(1.0),
         _ => 1.2,
     };
-    let metrics = format!("{}/{}", widgets::fmt_num(u.show(size).round(), ""), widgets::fmt_num((u.show(size) * lines).round(), ""));
+    let metrics = format!("{}/{}", widgets::fmt_num(two(u.show(size)), ""), widgets::fmt_num((u.show(size) * lines).round(), ""));
     let w = cols(ui) * 2.0 + GAP;
     let (r, _) = ui.allocate_exact_size(vec2(w, 34.0), Sense::hover());
     let detach_r = Rect::from_center_size(pos2(r.max.x - 18.0, r.center().y), vec2(24.0, 24.0));
@@ -887,7 +1045,7 @@ fn color_row(
         let orect = Rect::from_min_max(pos2(r.max.x - op_w, r.min.y), r.max);
         ui.painter().vline(orect.min.x, orect.y_range().shrink(6.0), Stroke::new(1.0, t.card));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(orect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        new_op = number(&mut child, &format!("{id}-op"), Prefix::Text(""), op.round(), "%", orect.width(), 1.0, true);
+        new_op = number(&mut child, &format!("{id}-op"), Prefix::Text(""), op.round(), "%", orect.width(), 1.0, PERCENT, true);
     }
     (picked, new_op)
 }
@@ -1002,7 +1160,7 @@ fn stroke(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
         }
         let u = units::small(app);
         let w = line.and_then(|l| l.width).unwrap_or(0.75);
-        if let Some(v) = number(ui, "stroke-w", Prefix::Icon(Icon::LineSpacing), (u.show(w) * 4.0).round() / 4.0, "", c, 0.25, true) {
+        if let Some(v) = number(ui, "stroke-w", Prefix::Icon(Icon::LineSpacing), two(u.show(w)), "", c, 0.25, (0.0, u.show(1584.0)), true) {
             run(app, "shape.line", json!({"width": u.to_pt(v).max(0.0)}));
         }
     });
