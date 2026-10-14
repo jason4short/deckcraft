@@ -12,6 +12,7 @@ pub mod canvas_shell;
 pub mod control;
 pub mod credits;
 pub mod dialogs;
+pub mod field_math;
 pub mod fillui;
 pub mod icons;
 pub mod inspector;

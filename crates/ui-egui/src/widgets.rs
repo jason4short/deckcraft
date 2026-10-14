@@ -463,9 +463,42 @@ pub fn arrow_step(ui: &Ui, field: egui::Id, step: f64) -> Option<f64> {
 }
 
 /// The number in a field's text ("120 px", "45%", "-3"), if there is one.
+/// The number typed into a field: a number with or without its unit, or arithmetic
+/// (`100/3`, `2*(4+1)`), see [`crate::field_math`].
 pub fn parse_num(text: &str) -> Option<f64> {
-    let num: String = text.chars().filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-').collect();
-    num.parse::<f64>().ok()
+    crate::field_math::eval(text, None)
+}
+
+/// What typed text makes of a field's value `cur`: a number, arithmetic, or an edit relative to
+/// it (`+10`, `*2`, `/4`, and `50%` in a field that isn't a percentage).
+pub fn typed_value(text: &str, cur: Option<f64>, percent_field: bool) -> Option<f64> {
+    match crate::field_math::parse(text, percent_field)? {
+        crate::field_math::Typed::Value(v) => Some(v),
+        crate::field_math::Typed::Rel(r) => match cur {
+            Some(c) => r.apply(c),
+            None => match r {
+                crate::field_math::Rel::Add(v) => Some(v),
+                _ => None,
+            },
+        },
+    }
+}
+
+/// How far a scrub `dx` points long moves a value whose step is `step`: ten times as far with
+/// Shift, a tenth with Alt (from FigCraft).
+pub fn scrub_amount(dx: f64, step: f64, shift: bool, alt: bool) -> f64 {
+    dx * step
+        * match (shift, alt) {
+            (true, false) => 10.0,
+            (false, true) => 0.1,
+            _ => 1.0,
+        }
+}
+
+/// The value a scrub that began at `from` and has moved `amount` shows: whole steps of `quantum`
+/// away from where it began.
+pub fn scrubbed(from: f64, amount: f64, quantum: f64) -> f64 {
+    if quantum > 0.0 && quantum.is_finite() { crate::field_math::stepped(from, (amount / quantum).round(), quantum) } else { from }
 }
 
 pub fn fmt_num(v: f64, suffix: &str) -> String {
