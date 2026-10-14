@@ -254,6 +254,9 @@ pub struct Prefs {
     /// Clicks pass through locked objects (canvas editors' lock: select them from a list). Off,
     /// a locked object is picked and formatted but doesn't move, as in PowerPoint.
     pub locked_click_through: bool,
+    /// ⌘-click selects the innermost layer under the pointer, inside groups (canvas editors'
+    /// deep select; ⇧-click adds to the selection). Off, ⌘-click adds or removes, as in PowerPoint.
+    pub cmd_deep_select: bool,
 }
 
 impl Default for Prefs {
@@ -269,6 +272,7 @@ impl Default for Prefs {
             undo_limit: 500,
             recovery_minutes: 1.0,
             locked_click_through: false,
+            cmd_deep_select: false,
         }
     }
 }

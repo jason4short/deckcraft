@@ -47,19 +47,22 @@ pub fn title_bar(app: &mut SlideApp, ui: &mut Ui) {
         child.spacing_mut().item_spacing.x = 2.0;
         let has_doc = app.session.active().is_some();
         let dirty = app.session.active().is_some_and(|d| d.is_dirty());
-        if icon_toggle(&mut child, Icon::Home, "Home", true, app.backstage_open()).clicked() {
+        // The canvas shell keeps the title bar clear, as canvas editors do: Home is in the
+        // presentation's menu and the tab row, the rest on the keyboard (⌘S, ⌘Z, ⇧⌘Z, ⌘↩).
+        let quick = app.ui.shell == crate::Shell::Classic;
+        if quick && icon_toggle(&mut child, Icon::Home, "Home", true, app.backstage_open()).clicked() {
             let _ = app.run("app.home", json!({}));
         }
-        if icon_toggle(&mut child, Icon::Save, "Save (⌘S)", has_doc, false).clicked() {
+        if quick && icon_toggle(&mut child, Icon::Save, "Save (⌘S)", has_doc, false).clicked() {
             app.save();
         }
-        if icon_toggle(&mut child, Icon::Undo, "Undo (⌘Z)", enabled(app, "edit.undo"), false).clicked() {
+        if quick && icon_toggle(&mut child, Icon::Undo, "Undo (⌘Z)", enabled(app, "edit.undo"), false).clicked() {
             run(app, "edit.undo", json!({}));
         }
-        if icon_toggle(&mut child, Icon::Redo, "Redo (⌘Y)", enabled(app, "edit.redo"), false).clicked() {
+        if quick && icon_toggle(&mut child, Icon::Redo, "Redo (⌘Y)", enabled(app, "edit.redo"), false).clicked() {
             run(app, "edit.redo", json!({}));
         }
-        if icon_toggle(&mut child, Icon::PlayFromStart, "Play from Start (F5)", has_doc, false).clicked() {
+        if quick && icon_toggle(&mut child, Icon::PlayFromStart, "Play from Start (F5)", has_doc, false).clicked() {
             app.start_show(0, false);
         }
         let title =

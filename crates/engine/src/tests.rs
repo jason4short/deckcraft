@@ -835,3 +835,40 @@ fn slide_ranges_parse_like_powerpoints_print_box() {
     let opts = cmd::file::pdf_options(&json!({"slides": [0, 7, 1]}), 2).unwrap();
     assert_eq!(opts.slides, Some(vec![0, 1]), "indices past the end are dropped");
 }
+
+#[test]
+fn command_click_selects_a_layer_inside_a_group() {
+    let mut s = session();
+    s.prefs.snap_to_grid = false;
+    s.prefs.smart_guides = false;
+    let a = s.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap();
+    let b = s.execute("shape.insert", &json!({"preset": "rect", "rect": [300, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap();
+    s.execute("selection.select", &json!({"ids": [a, b]})).unwrap();
+    s.execute("arrange.group", &json!({})).unwrap();
+    let group = s.doc().unwrap().selection.shapes[0].0 as u64;
+    let ev = |kind, x, y, cmd| PointerEvent { kind, x, y, mods: Mods { cmd, ..Mods::default() }, tol: 3.0 };
+    let click = |s: &mut Session, x, y, cmd| {
+        s.pointer(ev(PointerKind::Down, x, y, cmd)).unwrap();
+        s.pointer(ev(PointerKind::Up, x, y, cmd)).unwrap();
+    };
+    let selected = |s: &Session| s.doc().unwrap().selection.shapes.iter().map(|i| i.0 as u64).collect::<Vec<_>>();
+    // A plain click picks the group.
+    click(&mut s, 340.0, 130.0, false);
+    assert_eq!(selected(&s), vec![group]);
+    // Without the canvas preference ⌘-click adds and removes, as in PowerPoint.
+    click(&mut s, 340.0, 130.0, true);
+    assert_eq!(selected(&s), Vec::<u64>::new());
+    // With it, ⌘-click picks the grouped rectangle itself.
+    s.prefs.cmd_deep_select = true;
+    click(&mut s, 340.0, 130.0, true);
+    assert_eq!(selected(&s), vec![b]);
+    // And dragging it moves just that one.
+    s.pointer(ev(PointerKind::Down, 340.0, 130.0, true)).unwrap();
+    s.pointer(ev(PointerKind::Drag, 360.0, 140.0, true)).unwrap();
+    s.pointer(ev(PointerKind::Up, 360.0, 140.0, true)).unwrap();
+    let st = s.doc().unwrap();
+    let bx = st.shape(ShapeId(b as u32)).unwrap().xfrm.unwrap();
+    let ax = st.shape(ShapeId(a as u32)).unwrap().xfrm.unwrap();
+    assert_eq!((bx.x, bx.y), (320.0, 110.0), "the grouped layer moved");
+    assert_eq!((ax.x, ax.y), (100.0, 100.0), "its sibling stayed");
+}

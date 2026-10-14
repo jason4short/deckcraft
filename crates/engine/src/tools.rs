@@ -264,6 +264,40 @@ impl Session {
         None
     }
 
+    /// The innermost layer under `p`, looking inside groups (topmost first), as a shape hit.
+    fn deep_hit(&self, st: &crate::DocState, p: Point, tol: f64) -> Option<Hit> {
+        fn rec(st: &crate::DocState, shapes: &[Shape], parent: Option<(Xfrm, Xfrm)>, p: Point, tol: f64, depth: usize, through: bool) -> Option<Hit> {
+            if depth > 32 {
+                return None;
+            }
+            for sh in shapes.iter().rev() {
+                if sh.hidden || (sh.locked && through) {
+                    continue;
+                }
+                let own = xfrm_of(&st.doc, &st.selection, sh);
+                // A grouped layer's box on the slide.
+                let x = match parent {
+                    Some((g, ch)) => cmd::arrange::child_to_parent(&g, &ch, &own),
+                    None => own,
+                };
+                match &sh.kind {
+                    ShapeKind::Group { children, child } => {
+                        if let Some(h) = rec(st, children, Some((x, *child)), p, tol, depth + 1, through) {
+                            return Some(h);
+                        }
+                    }
+                    _ => {
+                        if let Some(h) = hit_shape_at(sh, x, p, tol) {
+                            return Some(h);
+                        }
+                    }
+                }
+            }
+            None
+        }
+        rec(st, st.shapes(), None, p, tol, 0, self.prefs.locked_click_through)
+    }
+
     /// Feed a pointer event to the active tool. Returns what happened (for agents).
     pub fn pointer(&mut self, ev: PointerEvent) -> Result<Value> {
         let tol = if ev.tol > 0.0 { ev.tol } else { 4.0 };
@@ -387,7 +421,16 @@ impl Session {
                 return Ok(json!({"caret": [pos.0, pos.1]}));
             }
         }
-        let hit = self.hit_test(p, tol);
+        let mut hit = self.hit_test(p, tol);
+        let deep = mods.cmd && self.prefs.cmd_deep_select;
+        // ⌘-click (canvas editors): the innermost layer under the pointer, inside groups.
+        if deep
+            && matches!(hit, Some(Hit::Shape { .. }) | None)
+            && let Some(st) = self.active()
+            && let Some(h) = self.deep_hit(st, p, tol)
+        {
+            hit = Some(h);
+        }
         let st = self.doc()?;
         match hit {
             Some(Hit::Resize { id, handle }) => {
@@ -415,7 +458,7 @@ impl Session {
             }
             Some(Hit::Shape { id, text }) => {
                 let selected = st.selection.shapes.contains(&id);
-                let toggle = mods.shift || mods.cmd;
+                let toggle = mods.shift || (mods.cmd && !deep);
                 let ids: Vec<ShapeId> = if toggle {
                     let mut v = st.selection.shapes.clone();
                     if selected {
@@ -453,7 +496,7 @@ impl Session {
                 }
             }
             None => {
-                let add = mods.shift || mods.cmd;
+                let add = mods.shift || (mods.cmd && !deep);
                 self.select(|_, sel| {
                     sel.text = None;
                     sel.cells = None;
@@ -1208,7 +1251,11 @@ pub fn resize_box(o: &Xfrm, h: u8, d: Vec2, keep_aspect: bool, from_center: bool
 }
 
 fn hit_shape(st: &crate::DocState, sh: &Shape, p: Point, tol: f64) -> Option<Hit> {
-    let x = xfrm_of(&st.doc, &st.selection, sh);
+    hit_shape_at(sh, xfrm_of(&st.doc, &st.selection, sh), p, tol)
+}
+
+/// [`hit_shape`] with the shape's box on the slide given (a grouped layer's).
+fn hit_shape_at(sh: &Shape, x: Xfrm, p: Point, tol: f64) -> Option<Hit> {
     let inv = x.affine().inverse();
     let local = inv * p;
     match &sh.kind {

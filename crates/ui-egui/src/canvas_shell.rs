@@ -147,6 +147,12 @@ fn header(app: &mut SlideApp, ui: &mut Ui) {
                     let name = format!("{title}{}", if dirty { " •" } else { "" });
                     let r = ui.add(egui::Button::new(egui::RichText::new(name).font(theme::bold(15.0))).frame(false).truncate());
                     egui::Popup::menu(&r).show(|ui| {
+                        if ui.button("Home").clicked() {
+                            let _ = app.run("app.home", json!({}));
+                        }
+                        if ui.button("Save").clicked() {
+                            app.save();
+                        }
                         for (label, page) in [("Info…", "info"), ("Save As…", "saveAs"), ("Export…", "export"), ("Print…", "print")] {
                             if ui.button(label).clicked() {
                                 let _ = app.run("app.backstage", json!({"page": page}));
