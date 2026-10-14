@@ -250,6 +250,18 @@ impl Session {
                 }
             }
         }
+        // A selected layer inside a group (picked with ⌘-click or from Layers) keeps the click,
+        // so it can be dragged without ⌘ instead of the group being picked again.
+        for id in st.selection.shapes.iter().rev() {
+            if cmd::group_frame(&st.doc, &st.selection, *id).is_none() {
+                continue;
+            }
+            if let Some(sh) = st.shape(*id).filter(|s| !s.hidden)
+                && let Some(h) = hit_shape_at(sh, xfrm_of(&st.doc, &st.selection, sh), p, tol)
+            {
+                return Some(h);
+            }
+        }
         // Shapes, topmost first.
         // Locked objects are still picked (to format them or type in them); they just don't move.
         // With `locked_click_through` clicks pass through them to what's below.

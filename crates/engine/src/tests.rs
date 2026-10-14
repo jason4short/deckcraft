@@ -900,6 +900,14 @@ fn a_grouped_layer_follows_its_group_and_moves_on_the_slide() {
     assert_eq!(s.doc().unwrap().selection.shapes, vec![ShapeId(b)]);
     let moved = on_slide(&s, b);
     assert!((moved.x - 560.0).abs() < 0.01 && (moved.y - 130.0).abs() < 0.01, "{moved:?}");
+    // Once picked, a plain drag (no ⌘) moves it, not the group.
+    let plain = |kind, x, y| PointerEvent { kind, x, y, mods: Mods::default(), tol: 3.0 };
+    s.pointer(plain(PointerKind::Down, 610.0, 160.0)).unwrap();
+    s.pointer(plain(PointerKind::Drag, 620.0, 160.0)).unwrap();
+    s.pointer(plain(PointerKind::Up, 620.0, 160.0)).unwrap();
+    assert_eq!(s.doc().unwrap().selection.shapes, vec![ShapeId(b)], "still the layer");
+    assert!((on_slide(&s, b).x - 570.0).abs() < 0.01);
+    s.execute("shape.move", &json!({"dx": -10})).unwrap();
     assert!((moved.w - 160.0).abs() < 0.01, "size kept");
     // The panel's X field (shape.move) works on the slide too.
     s.execute("shape.move", &json!({"x": 600})).unwrap();
