@@ -38,6 +38,8 @@ pub struct Show {
     pub ended: bool,
     /// The slide whose media was last started (auto-play runs once per visit).
     media_slide: Option<usize>,
+    /// The slide's media steps (play, pause, stop) already run this visit, by animation index.
+    media_fired: Vec<usize>,
     /// The slide shown before the current one (the Last Slide Viewed action).
     last_viewed: Option<usize>,
     /// Click areas of hyperlinks and shape actions on slide `.0`, in slide points.
@@ -97,6 +99,7 @@ impl Show {
             last_move: 0.0,
             ended: false,
             media_slide: None,
+            media_fired: Vec::new(),
             last_viewed: None,
             links: None,
         }
@@ -376,6 +379,8 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         }
     }
     show_media(app, &mut show, &doc);
+    let t_now = if show.state.playing { now - show.step_start } else { 0.0 };
+    media_steps(app, &mut show, &doc, t_now);
     // Draw.
     let full = ui.max_rect();
     let painter = ui.painter_at(full);
@@ -694,6 +699,7 @@ fn show_media(app: &mut SlideApp, show: &mut Show, doc: &Presentation) {
         return;
     }
     show.media_slide = cur;
+    show.media_fired.clear();
     let keep: Vec<ShapeId> = match cur {
         Some(_) => app.media.ids().into_iter().filter(|id| crate::media::find_clip(doc, *id).is_some_and(|c| c.play_across_slides)).collect(),
         None => vec![],
@@ -705,8 +711,48 @@ fn show_media(app: &mut SlideApp, show: &mut Show, doc: &Presentation) {
     }
     if let Some(i) = cur {
         for (id, _, clip) in crate::media::slide_media(doc, i) {
-            if clip.autoplay && !keep.contains(&id) {
+            if clip.autoplay && !keep.contains(&id) && !app.media.is_playing(id) {
                 app.media.play(doc, id, &clip, None, crate::media::Owner::Show);
+            }
+        }
+    }
+}
+
+/// Run the slide's media steps (PowerPoint's "play", "pause" and "stop" effects) as the show
+/// reaches them: a step before the current one, or the current one once its clock passes the
+/// effect's start. Each runs once per visit to the slide.
+fn media_steps(app: &mut SlideApp, show: &mut Show, doc: &Presentation, t_step: f64) {
+    if show.ended {
+        return;
+    }
+    let (step, playing) = (show.state.step, show.state.playing);
+    let i = show.state.slide;
+    let Some(slide) = doc.slides.get(i) else { return };
+    let due: Vec<deckcraft_anim::EffectTiming> = show
+        .timeline(doc)
+        .effects()
+        .into_iter()
+        .filter(|e| e.class == deckcraft_model::anim::AnimClass::Media && e.sequence == deckcraft_anim::Sequence::Main)
+        .filter(|e| e.step < step || (e.step == step && playing && t_step >= e.start))
+        .collect();
+    for e in due {
+        if show.media_fired.contains(&e.anim) {
+            continue;
+        }
+        show.media_fired.push(e.anim);
+        let Some(a) = slide.animations.get(e.anim) else { continue };
+        let Some(clip) = crate::media::find_clip(doc, a.shape) else { continue };
+        match a.effect.as_str() {
+            "pause" => {
+                if app.media.is_playing(a.shape) {
+                    app.media.pause(a.shape);
+                }
+            }
+            "stop" => app.media.stop(a.shape),
+            _ => {
+                if !app.media.is_playing(a.shape) {
+                    app.media.play(doc, a.shape, &clip, None, crate::media::Owner::Show);
+                }
             }
         }
     }
@@ -884,5 +930,63 @@ mod tests {
         assert_eq!(tr.old.as_ref().map(TextureHandle::id), Some(red.id()));
         assert_eq!(tr.from, Some(0));
         assert!(show.tex.is_none(), "the new slide gets a texture of its own instead of overwriting the old one");
+    }
+
+    fn with_video() -> (crate::SlideApp, ShapeId) {
+        let mut app = crate::SlideApp::new(deckcraft_engine::Session::with_new(), crate::Services::default());
+        let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../media/tests/fixtures/clip-h264.mov")).unwrap();
+        let data = deckcraft_engine::cmd::base64_encode(&bytes);
+        let r = app.run("insert.video", json!({"data": data, "name": "clip.mov"})).unwrap();
+        (app, ShapeId(r["id"].as_u64().unwrap() as u32))
+    }
+
+    fn harness(app: crate::SlideApp) -> egui_kittest::Harness<'static, crate::SlideApp> {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
+            |ui, app: &mut crate::SlideApp| {
+                app.logic(ui.ctx());
+                app.ui(ui);
+            },
+            app,
+        );
+        h.run_steps(4);
+        h
+    }
+
+    #[test]
+    fn the_next_click_plays_an_inserted_video_before_moving_on() {
+        let (mut app, id) = with_video();
+        app.run("slide.new", json!({})).unwrap();
+        app.run("slide.go", json!({"index": 0})).unwrap();
+        let a = &app.session.active().unwrap().doc.slides[0].animations;
+        assert!(a.iter().any(|x| x.shape == id && x.class == deckcraft_model::anim::AnimClass::Media), "inserted with a play step: {a:?}");
+        app.start_show(0, false);
+        let mut h = harness(app);
+        assert!(h.state().media.status(id).is_none(), "nothing plays before the click");
+        for pressed in [true, false] {
+            h.event(egui::Event::Key { key: egui::Key::ArrowRight, physical_key: None, pressed, repeat: false, modifiers: Default::default() });
+        }
+        h.run_steps(6);
+        // The test clip is a few frames long: started is what counts.
+        assert!(h.state().media.status(id).is_some(), "→ played the video");
+        assert_eq!(h.state().show.as_ref().map(|s| s.state.slide), Some(0), "and stayed on its slide");
+    }
+
+    #[test]
+    fn start_automatically_is_kept_in_the_file() {
+        let (mut app, id) = with_video();
+        app.run("selection.select", json!({"ids": [id.0]})).unwrap();
+        app.run("media.options", json!({"autoplay": true})).unwrap();
+        let data = app.session.execute("file.saveBytes", &json!({"format": "pptx"})).unwrap()["data"].clone();
+        app.session.execute("file.openBytes", &json!({"name": "v.pptx", "data": data})).unwrap();
+        let doc = app.session.active().unwrap().doc.clone();
+        let a = &doc.slides[0].animations;
+        assert!(
+            a.iter().any(|x| x.class == deckcraft_model::anim::AnimClass::Media && x.start != deckcraft_model::anim::AnimStart::OnClick),
+            "the automatic play step came back: {a:?}"
+        );
+        let vid = doc.slides[0].shapes.iter().find(|s| matches!(s.kind, deckcraft_model::ShapeKind::Media(_))).unwrap().id;
+        app.start_show(0, false);
+        let h = harness(app);
+        assert!(h.state().media.status(vid).is_some(), "it plays as the slide shows");
     }
 }
