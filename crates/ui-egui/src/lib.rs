@@ -302,6 +302,9 @@ pub struct SlideApp {
     /// The slide a ⇧-extended range starts from, and the one it reaches.
     pub slide_anchor: Option<usize>,
     pub slide_cursor: Option<usize>,
+    /// Placeholders moved off their layout's position, `(slide, shape id, kind)`, for the
+    /// presentation and revision they were found in (see `moved_placeholders`).
+    moved: Option<((usize, u64), Vec<(usize, u32, String)>)>,
     last_time: f64,
     /// When AutoRecover data was last written (seconds, egui time).
     pub last_recovery: f64,
@@ -353,6 +356,7 @@ impl SlideApp {
             thumbs_rect: None,
             slide_anchor: None,
             slide_cursor: None,
+            moved: None,
             last_time: 0.0,
             last_recovery: 0.0,
             quit_confirmed: false,
@@ -1076,6 +1080,28 @@ impl SlideApp {
             self.paste("");
         }
         self.drain_requests();
+    }
+
+    /// Placeholders moved off their layout's position (`placeholder.moved`): `(slide, shape id,
+    /// kind)`, found again only when the presentation changes.
+    pub fn moved_placeholders(&mut self) -> Vec<(usize, u32, String)> {
+        let Some(key) = self.session.active_index().zip(self.session.active().map(|d| d.revision)) else { return vec![] };
+        if let Some((k, v)) = &self.moved
+            && *k == key
+        {
+            return v.clone();
+        }
+        let v: Vec<(usize, u32, String)> = self
+            .session
+            .execute("placeholder.moved", &json!({}))
+            .ok()
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|m| Some((m.get("slide")?.as_u64()? as usize, m.get("id")?.as_u64()? as u32, m.get("kind")?.as_str()?.to_string())))
+            .collect();
+        self.moved = Some((key, v.clone()));
+        v
     }
 
     /// The slide list keeps the keyboard until a click lands elsewhere, or a shape or text is

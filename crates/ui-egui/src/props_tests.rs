@@ -414,3 +414,50 @@ fn updating_a_style_from_the_selection_makes_the_text_follow_it() {
     assert!(h.query_by_label("Text style: Plain text").is_some());
     assert_eq!(h.state().session.active().unwrap().history.undo.len(), undo + 1, "one undo step");
 }
+
+/// Four slides with their titles moved on slides 2 and 3; slide 3's title selected.
+fn moved_titles(h: &mut Harness<'static, SlideApp>) -> Vec<u32> {
+    let app = h.state_mut();
+    for _ in 0..3 {
+        app.run("slide.new", json!({})).unwrap();
+    }
+    let mut ids = vec![];
+    for i in [1usize, 2] {
+        app.run("slide.go", json!({"index": i})).unwrap();
+        let id = app.session.active().unwrap().doc.slides[i].shapes[0].id.0;
+        app.run("selection.select", json!({"ids": [id]})).unwrap();
+        app.run("shape.move", json!({"dx": 20 * i, "dy": 10})).unwrap();
+        ids.push(id);
+    }
+    h.run_steps(3);
+    ids
+}
+
+#[test]
+fn a_placeholder_resets_or_lines_up_its_kind_on_every_slide() {
+    let mut h = harness();
+    let ids = moved_titles(&mut h);
+    assert!(h.query_by_label("Reset 2").is_some(), "two titles are off their layout");
+    click(&mut h, "Apply to all");
+    let d = h.state().session.active().unwrap();
+    assert!(
+        ids.iter().all(|id| d.doc.slides.iter().flat_map(|s| s.shapes.iter()).any(|s| s.id.0 == *id && s.xfrm.is_none())),
+        "both follow the layout"
+    );
+    assert!(h.query_by_label("None moved").is_some());
+    h.state_mut().run("edit.undo", json!({})).unwrap();
+    h.run_steps(3);
+    click(&mut h, "Reset 2");
+    assert!(h.state_mut().run("placeholder.moved", json!({})).unwrap().as_array().unwrap().is_empty());
+}
+
+#[test]
+fn a_thumbnail_marks_and_selects_its_moved_placeholders() {
+    let mut h = harness();
+    let ids = moved_titles(&mut h);
+    assert!(h.query_by_label("Slide 1: placeholders moved off the layout").is_none());
+    click(&mut h, "Slide 2: placeholders moved off the layout");
+    let d = h.state().session.active().unwrap();
+    assert_eq!(d.selection.slide, 1);
+    assert_eq!(d.selection.shapes.iter().map(|s| s.0).collect::<Vec<_>>(), vec![ids[0]]);
+}
