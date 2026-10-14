@@ -233,6 +233,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.print", "Print", Some("Cmd+P"), "{layout?, perPage?, slides?, includeHidden?, frame?}"),
     ("app.about", "About DeckCraft", None, "{}"),
     ("app.palette", "Command Palette", Some("Cmd+Shift+P"), "{}"),
+    ("edit.pasteToReplace", "Paste to Replace", Some("Cmd+Shift+R"), "{}"),
     ("app.preferences", "Preferences…", Some("Cmd+,"), "{}"),
     ("app.openDialog", "Open…", None, "{purpose?}"),
     ("app.insertPictureDialog", "Picture from File…", None, "{}"),
@@ -619,6 +620,7 @@ impl SlideApp {
                 return Ok(json!({"shell": self.ui.shell.id()}));
             }
             "view.grayscale" => self.ui.grayscale = self.flag(p, self.ui.grayscale),
+            "edit.pasteToReplace" => return self.paste_to_replace(),
             "show.start" => {
                 let from = p.get("from").and_then(Value::as_u64).map(|v| v as usize).unwrap_or(0);
                 self.start_show(from, false);
@@ -1085,6 +1087,68 @@ impl SlideApp {
         if elsewhere || editing {
             self.slides_focus = false;
         }
+    }
+
+    /// Paste to Replace (⇧⌘R), as in canvas editors: what's on the clipboard (an image, else what
+    /// was copied here) takes each selected object's place: centred on it, at its place in the
+    /// stack, and the object removed. One undo step.
+    pub fn paste_to_replace(&mut self) -> Result<Value, String> {
+        let Some(st) = self.session.active() else { return Err("no presentation".into()) };
+        let top: Vec<deckcraft_model::ShapeId> = st.shapes().iter().map(|s| s.id).collect();
+        let targets: Vec<(deckcraft_model::ShapeId, deckcraft_model::Xfrm)> = st
+            .selection
+            .shapes
+            .iter()
+            .filter(|id| top.contains(id))
+            .filter_map(|id| st.shape(*id).map(|s| (*id, deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, s))))
+            .collect();
+        if targets.is_empty() {
+            return Err("Select the objects to replace".into());
+        }
+        let image = self.services.clipboard_image.as_mut().and_then(|f| f());
+        if image.is_none() && self.session.clipboard.shapes.is_empty() {
+            return Err("Copy something to paste in their place".into());
+        }
+        let before = self.session.active().map(|d| d.history.undo.len()).unwrap_or(0);
+        let mut pasted = vec![];
+        for (target, x) in targets {
+            let r = match &image {
+                Some(png) => self.run("insert.picture", json!({"name": "Pasted image.png", "data": deckcraft_engine::cmd::base64_encode(png)})),
+                None => self.run("edit.paste", json!({})),
+            };
+            r?;
+            let Some(st) = self.session.active() else { break };
+            let ids = st.selection.shapes.clone();
+            let boxes: Vec<deckcraft_model::Xfrm> =
+                ids.iter().filter_map(|id| st.shape(*id).map(|s| deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, s))).collect();
+            let Some(first) = boxes.first() else { continue };
+            let (mut x0, mut y0, mut x1, mut y1) = (first.x, first.y, first.x + first.w, first.y + first.h);
+            for b in &boxes {
+                (x0, y0, x1, y1) = (x0.min(b.x), y0.min(b.y), x1.max(b.x + b.w), y1.max(b.y + b.h));
+            }
+            let (dx, dy) = (x.x + x.w / 2.0 - (x0 + x1) / 2.0, x.y + x.h / 2.0 - (y0 + y1) / 2.0);
+            self.run("shape.move", json!({"ids": ids, "dx": dx, "dy": dy}))?;
+            // Into the target's place in the stack (it moves up as they go in below it).
+            let at = self.session.active().and_then(|d| d.shapes().iter().position(|s| s.id == target)).unwrap_or(0);
+            for (k, id) in ids.iter().enumerate() {
+                self.run("arrange.reorder", json!({"id": id, "index": at + k}))?;
+            }
+            self.run("edit.delete", json!({"ids": [target]}))?;
+            pasted.extend(ids);
+        }
+        let _ = self.run("selection.select", json!({"ids": pasted}));
+        if let Some(st) = self.session.active_mut() {
+            let undo = &mut st.history.undo;
+            if undo.len() > before + 1 {
+                undo.truncate(before + 1);
+            }
+            if undo.len() > before
+                && let Some(e) = undo.last_mut()
+            {
+                e.label = "Paste to Replace".into();
+            }
+        }
+        Ok(json!({"ids": pasted}))
     }
 
     /// Paste from the system clipboard: its text, else an image on it (screenshots, copied

@@ -73,7 +73,8 @@ pub fn ui_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
 
 /// Mac-style object shortcuts, as in Keynote and canvas editors, beside PowerPoint's (⌥⌘G, ⇧⌘],
 /// ⌘D… stay bound by the commands themselves): ⌘G groups, ⇧⌘G ungroups, ⌥⌘] / ⌥⌘[ bring to
-/// front / send to back, ⇧⌘L locks or unlocks, ⇧⌘H hides or shows, ⇧⌘Z redoes. True when consumed.
+/// front / send to back, ⇧⌘L locks or unlocks, ⇧⌘H hides or shows, ⇧⌘R pastes to replace, ⇧⌘Z
+/// redoes. True when consumed.
 pub fn mac_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
     use egui::Key::*;
     if !m.cmd {
@@ -98,6 +99,7 @@ pub fn mac_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
         (OpenBracket | OpenCurlyBracket, false, true) => ("arrange.sendToBack", json!({})),
         (L, true, false) => ("shape.lock", json!({"locked": any_unlocked})),
         (H, true, false) => ("shape.visible", json!({"visible": !any_shown})),
+        (R, true, false) => ("edit.pasteToReplace", json!({})),
         _ => return false,
     };
     if let Err(e) = app.run(id, p) {
@@ -206,6 +208,7 @@ pub fn menu_tree() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
                 ("Copy", "edit.copy"),
                 ("Paste", "edit.paste"),
                 ("Paste and Match Formatting", "edit.pasteText"),
+                ("Paste to Replace", "edit.pasteToReplace"),
                 ("-", ""),
                 ("Select All", "edit.selectAll"),
                 ("Duplicate", "edit.duplicate"),

@@ -176,3 +176,62 @@ fn moving_slides_keeps_their_order() {
     assert_eq!(moves(&[1, 3], 5, true, true), vec![(3, 4), (1, 3)]);
     assert_eq!(moves(&[2], 3, true, false), vec![], "already last");
 }
+
+// ----- Paste to Replace ------------------------------------------------------------------
+
+fn centre(h: &Harness<'static, SlideApp>, id: ShapeId) -> (f64, f64) {
+    let x = get(h, id).xfrm.unwrap();
+    (x.x + x.w / 2.0, x.y + x.h / 2.0)
+}
+
+#[test]
+fn shift_command_r_puts_the_copied_shape_in_each_selected_ones_place() {
+    let (mut h, ids) = harness();
+    let star = h.state_mut().run("shape.insert", json!({"preset": "star5", "rect": [600, 300, 40, 40]})).unwrap()["id"].as_u64().unwrap() as u32;
+    select(&mut h, &[ShapeId(star)]);
+    h.state_mut().session.execute("edit.copy", &json!({})).unwrap();
+    let (c0, c2) = (centre(&h, ids[0]), centre(&h, ids[2]));
+    let before = order(&h);
+    let undo = h.state().session.active().unwrap().history.undo.len();
+    select(&mut h, &[ids[0], ids[2]]);
+    press(&mut h, Key::R, CMD | Modifiers::SHIFT);
+    let after = order(&h);
+    assert_eq!(after.len(), before.len(), "two in, two out");
+    assert!(!after.contains(&ids[0]) && !after.contains(&ids[2]), "the selected ones are gone");
+    let pos = |id: ShapeId, list: &[ShapeId]| list.iter().position(|x| *x == id).unwrap();
+    let new0 = after[pos(ids[0], &before)];
+    let new2 = after[pos(ids[2], &before)];
+    assert!(
+        matches!(get(&h, new0).geom, deckcraft_model::Geom::Preset { ref name, .. } if name == "star5"),
+        "a star in the first one's place in the stack"
+    );
+    let close = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6;
+    assert!(close(centre(&h, new0), c0) && close(centre(&h, new2), c2), "centred where they were");
+    assert_eq!(h.state().session.active().unwrap().selection.shapes, vec![new0, new2], "the replacements are selected");
+    assert_eq!(h.state().session.active().unwrap().history.undo.len(), undo + 1, "one undo step");
+    press(&mut h, Key::Z, CMD);
+    assert_eq!(order(&h), before, "undone");
+}
+
+#[test]
+fn paste_to_replace_takes_an_image_from_the_clipboard() {
+    let png = deckcraft_render::Image { width: 4, height: 4, pixels: vec![200; 64] }.to_png();
+    let mut app = SlideApp::new(Session::with_new(), Services { clipboard_image: Some(Box::new(move || Some(png.clone()))), ..Default::default() });
+    let id = ShapeId(app.run("shape.insert", json!({"preset": "rect", "rect": [100, 100, 100, 60]})).unwrap()["id"].as_u64().unwrap() as u32);
+    app.run("selection.select", json!({"ids": [id]})).unwrap();
+    app.run("edit.pasteToReplace", json!({})).unwrap();
+    let d = app.session.active().unwrap();
+    assert!(d.shape(id).is_none());
+    assert!(matches!(d.selected_shapes()[0].kind, ShapeKind::Picture { .. }));
+}
+
+#[test]
+fn paste_to_replace_needs_a_selection_and_something_copied() {
+    let (mut h, ids) = harness();
+    h.state_mut().run("edit.deselect", json!({})).unwrap();
+    assert!(h.state_mut().run("edit.pasteToReplace", json!({})).is_err());
+    select(&mut h, &ids[..1]);
+    let n = order(&h).len();
+    assert!(h.state_mut().run("edit.pasteToReplace", json!({})).is_err(), "nothing copied");
+    assert_eq!(order(&h).len(), n);
+}

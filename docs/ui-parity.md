@@ -95,7 +95,9 @@ group/ungroup, bold/italic/underline, alignment, font size, list levels, Format 
 start/current, view switching. Mac-style object shortcuts, as in Keynote and canvas editors, work
 beside them in both layouts (`menus::mac_shortcut`): ⌘G group, ⇧⌘G ungroup, ⌥⌘] bring to front,
 ⌥⌘[ send to back, ⇧⌘L lock / unlock and ⇧⌘H hide / show the selection (any unlocked or shown
-layer makes them all locked or hidden), ⇧⌘Z redo; ⇧⌘V and ⌥⇧⌘V paste text without its
+layer makes them all locked or hidden), ⇧⌘R paste to replace (Edit menu too: the clipboard's
+image, else what was copied here, takes each selected object's place, centred on it and at its
+place in the stack, in one undo step), ⇧⌘Z redo; ⇧⌘V and ⌥⇧⌘V paste text without its
 formatting. A click on a thumbnail gives the slide list the keyboard (its selected rows are
 tinted) until a click lands elsewhere or a shape is selected (`thumbs::slide_key`): ⌘D duplicates
 the selected slides, Delete removes them, ⇧⌘H hides or shows them (⌘H stays the Mac's Hide app),
