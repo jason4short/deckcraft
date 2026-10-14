@@ -1,12 +1,14 @@
 //! Placeholders across the deck. A slide's placeholder takes its position and size from its
 //! layout's until it's moved, when it keeps its own (PPTX `a:xfrm` on the slide), so a title
 //! nudged on one slide drifts from the rest. These commands find the moved ones, put them back
-//! on the layout's position, or make one slide's position the layout's for every slide.
+//! on the layout's position, or make one slide's position the layout's for every slide. A text
+//! box can also be made one of its layout's placeholders (imported decks often have titles that
+//! are plain text boxes), or a placeholder a plain shape again.
 
 use std::sync::Arc;
 
 use deckcraft_model::resolve::{self, Ctx};
-use deckcraft_model::{PhType, Presentation, Shape, ShapeId, Xfrm};
+use deckcraft_model::{PhType, Placeholder, Presentation, Shape, ShapeId, ShapeKind, Xfrm};
 use serde_json::{Value, json};
 
 use super::*;
@@ -39,6 +41,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{id?: a placeholder on the current slide (default: the selected one)} → {reset}: its position and size become its layout placeholder's, and every slide with that layout follows",
             has_slide,
             to_layout
+        ),
+        cmd!(
+            "placeholder.assign",
+            "Make Placeholder",
+            [],
+            None,
+            "{id?: a shape on the current slide (default: the selected one), kind: title|subTitle|body|dt|ftr|sldNum|none} → {id, kind, untagged? | removed?}: the shape becomes that placeholder of its slide's layout, keeping its position, text and own formatting (a shape already holding that place is untagged, or deleted when empty); `none` makes a placeholder a plain shape that looks the same",
+            has_slide,
+            assign
         ),
     ]
 }
@@ -167,6 +178,112 @@ fn to_layout(s: &mut Session, p: &Value) -> Result<Value> {
         lsh.xfrm = Some(x);
         clear(doc, &followers);
         Ok(json!({"reset": followers.len()}))
+    })
+}
+
+/// Does a layout placeholder of kind `have` take a shape asked to be `want`?
+fn fits(want: PhType, have: PhType) -> bool {
+    same_kind(want, have) || (want == PhType::Body && have == PhType::Obj)
+}
+
+/// `sh` as a plain shape that looks as it did as a placeholder: what it inherited (position,
+/// fill, text box settings, paragraph and character formatting) written onto it.
+fn bake(ctx: &Ctx, sh: &Shape) -> Shape {
+    let mut out = sh.clone();
+    out.xfrm = Some(resolve::xfrm(ctx, sh));
+    if out.fill.is_none()
+        && let (Some(f), None) = resolve::fill(ctx, sh)
+    {
+        out.fill = Some(f);
+    }
+    if let (Some(t), Some(src)) = (out.text.as_mut(), sh.text.as_ref()) {
+        t.body = resolve::body(ctx, sh);
+        for (para, from) in t.paragraphs.iter_mut().zip(&src.paragraphs) {
+            let lvl = resolve::level_style(ctx, sh, from.level);
+            para.props.inherit(&lvl.para);
+            for r in &mut para.runs {
+                r.props.inherit(&lvl.run);
+            }
+            para.end_props.inherit(&lvl.run);
+        }
+    }
+    out.ph = None;
+    out
+}
+
+fn assign(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "placeholder.assign";
+    let kind = str_param(p, "kind").ok_or_else(|| bad(CMD, "give `kind`"))?;
+    let st = s.doc()?;
+    if st.selection.target != crate::Target::Slides {
+        return Err(bad(CMD, "only shapes on slides become placeholders"));
+    }
+    let doc = &st.doc;
+    let at = st.selection.slide;
+    let slide = doc.slides.get(at).ok_or_else(|| bad(CMD, "no slide"))?;
+    let id = match id_param(p, "id") {
+        Some(id) => id,
+        None => *st.selection.shapes.first().ok_or_else(|| bad(CMD, "select a shape"))?,
+    };
+    let sh = slide.shapes.iter().find(|x| x.id == id).ok_or_else(|| bad(CMD, "not a shape on this slide (shapes in groups can't be placeholders)"))?;
+    let ctx = Ctx::for_slide(doc, slide).ok_or_else(|| bad(CMD, "no layout"))?;
+    // (shape to replace, its replacement or None to delete)
+    let mut changes: Vec<(ShapeId, Option<Shape>)> = vec![];
+    let mut untagged = None;
+    if kind == "none" {
+        if sh.ph.is_none() {
+            return Ok(json!({"id": id, "kind": "none"}));
+        }
+        changes.push((id, Some(bake(&ctx, sh))));
+    } else {
+        let want = PhType::from_xml(kind);
+        if want.xml() != kind {
+            return Err(bad(CMD, format!("unknown placeholder kind `{kind}`")));
+        }
+        if !matches!(sh.kind, ShapeKind::Shape) {
+            return Err(bad(CMD, "only shapes with text can be made placeholders here"));
+        }
+        let layout = ctx.layout.ok_or_else(|| bad(CMD, "this slide has no layout"))?;
+        let places: Vec<&Shape> = layout.shapes.iter().filter(|l| l.ph_type().is_some_and(|t| fits(want, t))).collect();
+        if places.is_empty() {
+            return Err(bad(CMD, format!("this slide's layout ({}) has no {} placeholder", layout.name, want.xml())));
+        }
+        // Which other shapes on the slide already hold each place.
+        let holder = |place: &Shape| {
+            slide.shapes.iter().find(|o| o.id != id && o.ph.is_some() && resolve::parents(&ctx, o).0.is_some_and(|l| l.id == place.id))
+        };
+        let place = places.iter().find(|pl| holder(pl).is_none()).or(places.first()).copied().ok_or_else(|| bad(CMD, "no place"))?;
+        if let Some(old) = holder(place) {
+            let empty = old.text.as_ref().is_none_or(|t| t.is_empty());
+            changes.push((old.id, if empty { None } else { Some(bake(&ctx, old)) }));
+            untagged = Some((if empty { "removed" } else { "untagged" }, old.id));
+        }
+        let lph = place.ph.clone().unwrap_or_default();
+        let mut new = if sh.ph.is_some() { bake(&ctx, sh) } else { sh.clone() };
+        new.xfrm = Some(resolve::xfrm(&ctx, sh));
+        new.text_box = false;
+        new.ph = Some(Placeholder { kind: lph.kind, idx: lph.idx, vertical: lph.vertical, ..Default::default() });
+        changes.push((id, Some(new)));
+    }
+    s.edit(|doc, sel| {
+        let sl = doc.slides.get_mut(at).ok_or_else(|| bad(CMD, "no slide"))?;
+        let shapes = &mut Arc::make_mut(sl).shapes;
+        for (cid, new) in changes {
+            match new {
+                Some(n) => {
+                    if let Some(x) = shapes.iter_mut().find(|x| x.id == cid) {
+                        *x = n;
+                    }
+                }
+                None => shapes.retain(|x| x.id != cid),
+            }
+        }
+        sel.shapes.retain(|x| shapes.iter().any(|s| s.id == *x));
+        let mut out = json!({"id": id, "kind": kind});
+        if let Some((key, u)) = untagged {
+            out[key] = json!(u);
+        }
+        Ok(out)
     })
 }
 

@@ -298,6 +298,12 @@ icons! {
     CornerTr => "corner-tr",
     CornerBr => "corner-br",
     CornerBl => "corner-bl",
+    /// A luggage tag: what placeholder of the layout a box is.
+    Tag => "tag",
+    /// A row of frames with a plus: the slide's animation states.
+    States => "states",
+    /// Lines appearing one by one: build a text box's paragraphs one at a time.
+    Build => "build",
     Eye => "eye",
     EyeOff => "eye-off",
     Close => "close",
@@ -2314,6 +2320,26 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.seg((4.0, 9.0), (7.0, 10.0), K);
             p.seg((15.0, 20.0), (14.0, 17.0), K);
             p.seg((20.0, 15.0), (17.0, 14.0), K);
+        }
+        I::Tag => {
+            // A tag with its corner cut to a point and a hole near the point.
+            p.shape(&[(4.0, 6.0), (4.0, 12.0), (12.5, 20.5), (20.5, 12.5), (12.0, 4.0), (6.0, 4.0)], N, K);
+            p.circle((8.5, 8.5), 1.5, N, K);
+        }
+        I::States => {
+            // Three frames in a row, the last one dashed, as the strip under the slide shows them.
+            p.rect(2.5, 8.0, 8.5, 16.0, 1.0, N, K);
+            p.rect(10.0, 8.0, 16.0, 16.0, 1.0, N, K);
+            p.seg((17.5, 12.0), (21.5, 12.0), K);
+            p.seg((19.5, 10.0), (19.5, 14.0), K);
+        }
+        I::Build => {
+            // Three bullet lines, the last one faint, appearing from the left.
+            for (k, y) in [6.5f32, 12.0, 17.5].into_iter().enumerate() {
+                let c = if k == 2 { C::Ink(0.4) } else { K };
+                p.dot((5.0, y), 1.4, c);
+                p.seg((8.5, y), (20.0, y), c);
+            }
         }
         I::CornerTl | I::CornerTr | I::CornerBr | I::CornerBl => {
             // A rounded corner, drawn top-left and mirrored into place.

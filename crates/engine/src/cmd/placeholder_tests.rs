@@ -95,3 +95,77 @@ fn to_layout_makes_one_slides_position_every_slides() {
     s.execute("slide.new", &json!({})).unwrap();
     assert_eq!(title_at(&mut s, 4).0, 40.0);
 }
+
+/// A text box with `text` on slide `i`.
+fn text_box(s: &mut Session, i: usize, text: &str) -> u32 {
+    s.execute("slide.go", &json!({"index": i})).unwrap();
+    let v = s.execute("insert.textBox", &json!({"rect": [30.0, 20.0, 400.0, 50.0], "text": text})).unwrap();
+    v["id"].as_u64().or_else(|| v["ids"][0].as_u64()).unwrap() as u32
+}
+
+fn shape(s: &Session, i: usize, id: u32) -> Option<deckcraft_model::Shape> {
+    s.doc().unwrap().doc.slides[i].shapes.iter().find(|sh| sh.id.0 == id).cloned()
+}
+
+#[test]
+fn assign_makes_a_text_box_the_slides_title() {
+    let mut s = deck();
+    let old = title(&s, 1);
+    let id = text_box(&mut s, 1, "Imported title");
+    let r = s.execute("placeholder.assign", &json!({"id": id, "kind": "title"})).unwrap();
+    assert_eq!(r["removed"], json!(old), "the empty title is deleted, not kept as a box");
+    let sh = shape(&s, 1, id).unwrap();
+    assert!(sh.ph_type().is_some_and(|t| t.is_title()));
+    assert!(!sh.text_box);
+    assert_eq!(sh.xfrm.unwrap().x, 30.0, "it stays where it was");
+    assert!(shape(&s, 1, old).is_none(), "the empty layout title is gone");
+    assert_eq!(title(&s, 1), id);
+    // It now counts with the deck's titles: resetting puts it on the layout's place.
+    s.execute("placeholder.reset", &json!({"kind": "title", "slides": [1]})).unwrap();
+    assert!(!title_at(&mut s, 1).2);
+    s.execute("edit.undo", &json!({})).unwrap();
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(shape(&s, 1, id).unwrap().ph.is_none(), "one undo step");
+    assert!(shape(&s, 1, old).is_some());
+}
+
+#[test]
+fn assign_untags_a_title_that_has_text() {
+    let mut s = deck();
+    let old = title(&s, 1);
+    s.execute("slide.go", &json!({"index": 1})).unwrap();
+    s.execute("text.set", &json!({"id": old, "text": "Keep me"})).unwrap();
+    let before = title_at(&mut s, 1);
+    let id = text_box(&mut s, 1, "New title");
+    let r = s.execute("placeholder.assign", &json!({"id": id, "kind": "title"})).unwrap();
+    assert_eq!(r["untagged"], json!(old));
+    let o = shape(&s, 1, old).unwrap();
+    assert!(o.ph.is_none());
+    let x = o.xfrm.unwrap();
+    assert_eq!((x.x, x.y), (before.0, before.1), "the old title keeps its place as a plain box");
+}
+
+#[test]
+fn none_makes_a_placeholder_a_plain_shape_that_looks_the_same() {
+    let mut s = deck();
+    let id = title(&s, 1);
+    let at = title_at(&mut s, 1);
+    s.execute("placeholder.assign", &json!({"id": id, "kind": "none"})).unwrap();
+    let sh = shape(&s, 1, id).unwrap();
+    assert!(sh.ph.is_none());
+    let x = sh.xfrm.unwrap();
+    assert_eq!((x.x, x.y), (at.0, at.1));
+    let body = &sh.text.unwrap().body;
+    assert!(body.anchor.is_some() && body.inset_l.is_some(), "text box settings written down");
+}
+
+#[test]
+fn assign_refuses_kinds_the_layout_lacks() {
+    let mut s = deck();
+    let id = text_box(&mut s, 1, "x");
+    assert!(s.execute("placeholder.assign", &json!({"id": id, "kind": "nope"})).is_err());
+    assert!(s.execute("placeholder.assign", &json!({"id": id})).is_err());
+    // Title and Content has no subtitle.
+    assert!(s.execute("placeholder.assign", &json!({"id": id, "kind": "subTitle"})).is_err());
+    assert!(s.execute("placeholder.assign", &json!({"id": id, "kind": "body"})).is_ok(), "the content placeholder takes body");
+}

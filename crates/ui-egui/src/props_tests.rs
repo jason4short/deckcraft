@@ -461,3 +461,18 @@ fn a_thumbnail_marks_and_selects_its_moved_placeholders() {
     assert_eq!(d.selection.slide, 1);
     assert_eq!(d.selection.shapes.iter().map(|s| s.0).collect::<Vec<_>>(), vec![ids[0]]);
 }
+
+#[test]
+fn a_text_box_is_made_the_slides_title_from_the_tag_menu() {
+    let mut h = harness();
+    h.state_mut().session.execute("slide.new", &json!({})).unwrap();
+    h.run_steps(2);
+    let id = text_box(&mut h);
+    click(&mut h, "Placeholder: what this box is on the slide's layout");
+    click(&mut h, "Title");
+    assert!(shape(h.state(), id).ph_type().is_some_and(|k| k.is_title()));
+    h.get_by_label("Title placeholder");
+    click(&mut h, "Placeholder: what this box is on the slide's layout");
+    click(&mut h, "Not a placeholder");
+    assert!(shape(h.state(), id).ph.is_none());
+}

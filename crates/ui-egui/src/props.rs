@@ -338,7 +338,12 @@ pub fn kind_label(sh: &Shape) -> String {
 
 fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize) {
     let t = Tokens::get(ui.ctx());
-    let title = if multi { format!("{n} selected") } else { kind_label(sh) };
+    let title = match sh.ph_type() {
+        _ if multi => format!("{n} selected"),
+        Some(k) => format!("{} placeholder", kind_name(k.xml(), false)),
+        None => kind_label(sh),
+    };
+    let on_slide = app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides);
     ui.horizontal(|ui| {
         ui.set_min_height(30.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -365,6 +370,10 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
                 }
                 let r = icon_button(ui, Icon::Link, "Link", enabled(app, "insert.hyperlink"));
                 egui::Popup::menu(&r).width(260.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| link_field(app, ui));
+                if on_slide && matches!(sh.kind, ShapeKind::Shape) {
+                    let r = icon_button(ui, Icon::Tag, "Placeholder: what this box is on the slide's layout", true);
+                    egui::Popup::menu(&r).width(220.0).show(|ui| placeholder_menu(app, ui, sh));
+                }
             }
             // The name takes the rest of the row, cut short with … when it's long.
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -372,6 +381,44 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
             });
         });
     });
+}
+
+/// The placeholders of the current slide's layout a box can become: `(kind, name)`, one per name.
+pub fn layout_places(app: &SlideApp) -> Vec<(String, String)> {
+    let Some(st) = app.session.active() else { return vec![] };
+    let Some(slide) = st.doc.slides.get(st.selection.slide) else { return vec![] };
+    let Some((_, Some(layout))) = st.doc.master_for(slide) else { return vec![] };
+    let mut out: Vec<(String, String)> = vec![];
+    for k in layout.shapes.iter().filter_map(Shape::ph_type) {
+        let name = kind_name(k.xml(), false);
+        if !out.iter().any(|(_, n)| *n == name) && !matches!(k, deckcraft_model::PhType::SlideImage) {
+            out.push((k.xml().to_string(), name));
+        }
+    }
+    out
+}
+
+/// Make the box one of its layout's placeholders, or a plain box again.
+fn placeholder_menu(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
+    let now = sh.ph_type().map(|k| kind_name(k.xml(), false));
+    ui.label(egui::RichText::new("Make this the slide's").font(theme::bold(12.5)));
+    let places = layout_places(app);
+    if places.is_empty() {
+        ui.label(egui::RichText::new("This layout has no placeholders").font(theme::font(12.0)).weak());
+    }
+    for (kind, name) in places {
+        let on = now.as_deref() == Some(name.as_str());
+        if ui.add(egui::Button::selectable(on, &name)).clicked() && !on {
+            run(app, "placeholder.assign", json!({"id": sh.id, "kind": kind}));
+            ui.close();
+        }
+    }
+    ui.separator();
+    let r = ui.add_enabled(sh.ph.is_some(), egui::Button::new("Not a placeholder"));
+    if r.on_hover_text("A plain text box that looks the same, no longer following the layout").clicked() {
+        run(app, "placeholder.assign", json!({"id": sh.id, "kind": "none"}));
+        ui.close();
+    }
 }
 
 /// `shape.merge` operations, as the Merge shapes menu lists them.
