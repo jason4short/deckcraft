@@ -21,6 +21,7 @@ pub mod inspector;
 pub mod measure_overlay;
 pub mod media;
 pub mod menus;
+pub mod native_menu;
 pub mod panes;
 pub mod props;
 pub mod ribbon;
@@ -280,6 +281,8 @@ pub struct SlideApp {
     /// A brief notice over the bottom of the window (missing fonts on opening a file).
     /// Notices showing (see `toast.rs`).
     pub toasts: Vec<toast::Toast>,
+    /// The macOS menu bar, when the desktop app installed one (else the menus are in the window).
+    pub native_menu: Option<native_menu::NativeMenu>,
     /// Documents (by uid) whose missing fonts have been mentioned.
     fonts_noted: std::collections::HashSet<u64>,
     pub perf: Perf,
@@ -346,6 +349,7 @@ impl SlideApp {
             media: media::MediaHost::new(audio_out),
             status: None,
             toasts: Vec::new(),
+            native_menu: None,
             fonts_noted: Default::default(),
             perf: Perf { frame_ms: 0.0, render_ms: 0.0, fps: 0.0 },
             synthetic: vec![],
@@ -878,6 +882,7 @@ impl SlideApp {
 
     /// Per-frame logic before layout: styles, control requests, screenshots, shortcuts.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        native_menu::run(self, ctx);
         let scale = self.ui.ui_scale.clamp(0.5, 3.0);
         if (ctx.zoom_factor() - scale).abs() > 1e-3 {
             ctx.set_zoom_factor(scale);
@@ -988,6 +993,9 @@ impl SlideApp {
 
     /// Inject synthetic events (one pointer event per frame).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        if let Some(menu) = self.native_menu.as_mut() {
+            menu.raw_input(raw);
+        }
         if self.synthetic.is_empty() {
             return;
         }
@@ -1226,6 +1234,11 @@ impl SlideApp {
         self.sync_backstage();
         self.sync_shell_prefs();
         ribbon::title_bar(self, ui);
+        // The menus: in the macOS menu bar when there is one, else under the title bar (canvas
+        // layout; the ribbon has its own tabs).
+        if self.native_menu.is_none() && self.ui.shell == Shell::Canvas && self.backstage.is_none() {
+            native_menu::bar_ui(self, ui);
+        }
         ribbon::doc_strip(self, ui);
         if self.ui.shell == Shell::Canvas && self.backstage.is_none() {
             canvas_shell::show(self, ui);

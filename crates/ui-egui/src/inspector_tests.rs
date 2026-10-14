@@ -28,7 +28,7 @@ fn harness() -> Harness<'static, SlideApp> {
 #[test]
 fn nothing_selected_shows_the_slide_layout_and_background() {
     let h = harness();
-    assert!(h.query_by_label("Slide").is_some());
+    assert!(h.query_all_by_label("Slide").count() >= 2, "the Slide section (and the Slide menu)");
     assert!(h.query_by_label("Background").is_some());
     assert!(h.query_by_label("Text").is_none());
 }
