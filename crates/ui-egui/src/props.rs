@@ -335,10 +335,16 @@ pub fn kind_label(sh: &Shape) -> String {
 
 fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize) {
     let t = Tokens::get(ui.ctx());
+    let on_slide = app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides);
     let title = match sh.ph_type() {
         _ if multi => format!("{n} selected"),
-        Some(k) => format!("{} placeholder", kind_name(k.xml(), false).trim_end_matches(" text")),
         None => kind_label(sh),
+        Some(k) => {
+            let name = kind_name(k.xml(), false).trim_end_matches(" text").to_string();
+            // On a slide a placeholder is named by what it is ("Title", "Footer"); in Slide
+            // Master view, where boxes are made placeholders, it says so.
+            if on_slide { name } else { format!("{name} placeholder") }
+        }
     };
     let target = app.session.active().map(|d| d.selection.target);
     ui.horizontal(|ui| {
@@ -375,7 +381,8 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
                         run(app, "placeholder.reset", json!({"ids": [sh.id]}));
                     }
                 }
-                if target.is_some() && matches!(sh.kind, ShapeKind::Shape) {
+                // Boxes are made placeholders in Slide Master view; slides take their layout's.
+                if target.is_some_and(|t| t != deckcraft_engine::Target::Slides) && matches!(sh.kind, ShapeKind::Shape) {
                     let r = icon_button(ui, Icon::Tag, "Placeholder: what this box is on the slide's layout", true);
                     egui::Popup::menu(&r).width(220.0).show(|ui| placeholder_menu(app, ui, sh));
                 }

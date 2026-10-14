@@ -416,18 +416,13 @@ fn updating_a_style_from_the_selection_makes_the_text_follow_it() {
 }
 
 #[test]
-fn a_text_box_is_made_the_slides_title_from_the_tag_menu() {
+fn a_slides_placeholder_is_named_by_its_kind_without_a_tag_menu() {
     let mut h = harness();
-    h.state_mut().session.execute("slide.new", &json!({})).unwrap();
-    h.run_steps(2);
-    let id = text_box(&mut h);
-    click(&mut h, "Placeholder: what this box is on the slide's layout");
-    click(&mut h, "Title");
-    assert!(shape(h.state(), id).ph_type().is_some_and(|k| k.is_title()));
-    h.get_by_label("Title placeholder");
-    click(&mut h, "Placeholder: what this box is on the slide's layout");
-    click(&mut h, "Not a placeholder");
-    assert!(shape(h.state(), id).ph.is_none());
+    let title = h.state().session.active().unwrap().current_slide().unwrap().shapes[0].id.0;
+    h.state_mut().run("selection.select", json!({"ids": [title]})).unwrap();
+    h.run_steps(3);
+    assert!(h.query_by_label("Title placeholder").is_none());
+    assert!(h.query_by_label("Placeholder: what this box is on the slide's layout").is_none(), "tags are set in Slide Master view");
 }
 
 #[test]
