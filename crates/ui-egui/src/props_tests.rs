@@ -465,3 +465,17 @@ fn a_text_box_is_made_the_slides_title_from_the_tag_menu() {
     click(&mut h, "Not a placeholder");
     assert!(shape(h.state(), id).ph.is_none());
 }
+
+#[test]
+fn a_box_on_a_layout_is_tagged_from_the_same_menu() {
+    let mut h = harness();
+    h.state_mut().run("view.slideMaster", json!({"master": 0, "layout": 1})).unwrap();
+    h.run_steps(2);
+    let id = text_box(&mut h);
+    click(&mut h, "Placeholder: what this box is on the slide's layout");
+    assert!(h.query_by_label("Make this a placeholder").is_some());
+    assert!(h.query_by_label("Picture").is_some(), "a layout takes kinds its slides don't have yet");
+    click(&mut h, "Footer");
+    assert_eq!(shape(h.state(), id).ph_type(), Some(deckcraft_model::PhType::Footer));
+    h.get_by_label("Footer placeholder");
+}

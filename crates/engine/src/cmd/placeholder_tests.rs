@@ -170,3 +170,51 @@ fn assign_refuses_kinds_the_layout_lacks() {
     assert!(s.execute("placeholder.assign", &json!({"id": id, "kind": "subTitle"})).is_err());
     assert!(s.execute("placeholder.assign", &json!({"id": id, "kind": "body"})).is_ok(), "the content placeholder takes body");
 }
+
+/// A text box on the current master or layout.
+fn template_box(s: &mut Session, text: &str) -> u32 {
+    let v = s.execute("insert.textBox", &json!({"rect": [40.0, 500.0, 300.0, 30.0], "text": text})).unwrap();
+    v["id"].as_u64().unwrap() as u32
+}
+
+fn template_shape(s: &Session, id: u32) -> Option<deckcraft_model::Shape> {
+    s.doc().unwrap().shapes().iter().find(|sh| sh.id.0 == id).cloned()
+}
+
+#[test]
+fn a_layout_box_becomes_a_new_placeholder() {
+    let mut s = deck();
+    s.execute("view.slideMaster", &json!({"master": 0, "layout": 1})).unwrap();
+    let before = s.doc().unwrap().shapes().iter().filter(|x| x.ph.is_some()).count();
+    let id = template_box(&mut s, "Notes for the presenter");
+    s.execute("placeholder.assign", &json!({"id": id, "kind": "body"})).unwrap();
+    let sh = template_shape(&s, id).unwrap();
+    assert_eq!(sh.ph_type(), Some(deckcraft_model::PhType::Body));
+    let idx = sh.ph.unwrap().idx;
+    let shapes = s.doc().unwrap().shapes().to_vec();
+    assert_eq!(shapes.iter().filter(|x| x.ph.is_some()).count(), before + 1, "a second body placeholder, nothing given up");
+    assert_eq!(shapes.iter().filter(|x| x.ph.as_ref().is_some_and(|p| p.idx == idx)).count(), 1, "its own index");
+    // A footer replaces the layout's footer.
+    let f = template_box(&mut s, "Company confidential");
+    let r = s.execute("placeholder.assign", &json!({"id": f, "kind": "ftr"})).unwrap();
+    assert!(r.get("removed").is_some() || r.get("untagged").is_some(), "{r}");
+    assert_eq!(s.doc().unwrap().shapes().iter().filter(|x| x.ph_type() == Some(deckcraft_model::PhType::Footer)).count(), 1);
+    // Headers belong to notes and handouts.
+    let h = template_box(&mut s, "Header");
+    assert!(s.execute("placeholder.assign", &json!({"id": h, "kind": "hdr"})).is_err());
+}
+
+#[test]
+fn the_master_takes_its_five_kinds_only() {
+    let mut s = deck();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    s.select(|_, sel| sel.target = crate::Target::Master { master: 0 }).unwrap();
+    let id = template_box(&mut s, "Deck title");
+    assert!(s.execute("placeholder.assign", &json!({"id": id, "kind": "pic"})).is_err());
+    let r = s.execute("placeholder.assign", &json!({"id": id, "kind": "title"})).unwrap();
+    assert!(r.get("untagged").is_some() || r.get("removed").is_some(), "the old master title gives up its place");
+    let titles = s.doc().unwrap().shapes().iter().filter(|x| x.ph_type().is_some_and(|t| t.is_title())).count();
+    assert_eq!(titles, 1);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(template_shape(&s, id).unwrap().ph.is_none(), "one undo step");
+}

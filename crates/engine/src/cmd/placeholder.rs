@@ -47,8 +47,8 @@ pub fn specs() -> Vec<CommandSpec> {
             "Make Placeholder",
             [],
             None,
-            "{id?: a shape on the current slide (default: the selected one), kind: title|subTitle|body|dt|ftr|sldNum|none} → {id, kind, untagged? | removed?}: the shape becomes that placeholder of its slide's layout, keeping its position, text and own formatting (a shape already holding that place is untagged, or deleted when empty); `none` makes a placeholder a plain shape that looks the same",
-            has_slide,
+            "{id?: a shape on the current slide, layout or master (default: the selected one), kind: title|subTitle|body|obj|dt|ftr|sldNum|…|none} → {id, kind, untagged? | removed?}: the shape becomes a placeholder keeping its position, text and own formatting. On a slide, one its layout has (the shape holding that place is untagged, or deleted when empty); on a layout or the master, a new one of that kind (a title, subtitle, date, footer or slide number already there gives up its place). `none` makes a placeholder a plain shape that looks the same",
+            has_doc,
             assign
         ),
     ]
@@ -211,26 +211,59 @@ fn bake(ctx: &Ctx, sh: &Shape) -> Shape {
     out
 }
 
+/// The kinds a box on a master or layout can be made (`target_is_master`: the slide master's
+/// five). Slides take only what their layout has; notes and handout headers aren't slide kinds.
+pub fn template_kinds(target_is_master: bool) -> &'static [PhType] {
+    use PhType::*;
+    if target_is_master {
+        &[Title, Body, Date, Footer, SlideNum]
+    } else {
+        &[Title, CtrTitle, SubTitle, Body, Obj, Picture, Chart, Table, Media, Date, Footer, SlideNum]
+    }
+}
+
+/// Kinds a master or layout has one of (any number of body and content placeholders).
+fn single(k: PhType) -> bool {
+    k.is_title() || matches!(k, PhType::SubTitle | PhType::Date | PhType::Footer | PhType::SlideNum)
+}
+
+/// A box made a placeholder: its own position, still growing with its text if it did.
+fn tagged(ctx: &Ctx, sh: &Shape, ph: Placeholder) -> Shape {
+    let mut new = if sh.ph.is_some() { bake(ctx, sh) } else { sh.clone() };
+    new.xfrm = Some(resolve::xfrm(ctx, sh));
+    if sh.text_box {
+        let fit = resolve::body(ctx, sh);
+        let body = &mut new.text.get_or_insert_with(Default::default).body;
+        body.autofit = body.autofit.or(fit.autofit);
+        body.wrap = body.wrap.or(fit.wrap);
+    }
+    new.text_box = false;
+    new.ph = Some(ph);
+    new
+}
+
 fn assign(s: &mut Session, p: &Value) -> Result<Value> {
     const CMD: &str = "placeholder.assign";
     let kind = str_param(p, "kind").ok_or_else(|| bad(CMD, "give `kind`"))?;
     let st = s.doc()?;
-    if st.selection.target != crate::Target::Slides {
-        return Err(bad(CMD, "only shapes on slides become placeholders"));
-    }
     let doc = &st.doc;
-    let at = st.selection.slide;
-    let slide = doc.slides.get(at).ok_or_else(|| bad(CMD, "no slide"))?;
+    let target = st.selection.target;
+    let shapes = st.shapes();
     let id = match id_param(p, "id") {
         Some(id) => id,
         None => *st.selection.shapes.first().ok_or_else(|| bad(CMD, "select a shape"))?,
     };
-    let sh =
-        slide.shapes.iter().find(|x| x.id == id).ok_or_else(|| bad(CMD, "not a shape on this slide (shapes in groups can't be placeholders)"))?;
-    let ctx = Ctx::for_slide(doc, slide).ok_or_else(|| bad(CMD, "no layout"))?;
+    let sh = shapes.iter().find(|x| x.id == id).ok_or_else(|| bad(CMD, "not a shape here (shapes in groups can't be placeholders)"))?;
+    let ctx = super::text::ctx_for(doc, &st.selection).ok_or_else(|| bad(CMD, "no layout"))?;
     // (shape to replace, its replacement or None to delete)
     let mut changes: Vec<(ShapeId, Option<Shape>)> = vec![];
     let mut untagged = None;
+    // An empty placeholder giving up its place goes; one with text stays as a plain box.
+    let mut give_up = |old: &Shape, changes: &mut Vec<(ShapeId, Option<Shape>)>| {
+        let empty = old.text.as_ref().is_none_or(|t| t.is_empty());
+        changes.push((old.id, if empty { None } else { Some(bake(&ctx, old)) }));
+        untagged = Some((if empty { "removed" } else { "untagged" }, old.id));
+    };
     if kind == "none" {
         if sh.ph.is_none() {
             return Ok(json!({"id": id, "kind": "none"}));
@@ -244,38 +277,48 @@ fn assign(s: &mut Session, p: &Value) -> Result<Value> {
         if !matches!(sh.kind, ShapeKind::Shape) {
             return Err(bad(CMD, "only shapes with text can be made placeholders here"));
         }
-        let layout = ctx.layout.ok_or_else(|| bad(CMD, "this slide has no layout"))?;
-        let places: Vec<&Shape> = layout.shapes.iter().filter(|l| l.ph_type().is_some_and(|t| fits(want, t))).collect();
-        if places.is_empty() {
-            return Err(bad(CMD, format!("this slide's layout ({}) has no {} placeholder", layout.name, want.xml())));
+        match target {
+            crate::Target::Slides => {
+                let layout = ctx.layout.ok_or_else(|| bad(CMD, "this slide has no layout"))?;
+                let places: Vec<&Shape> = layout.shapes.iter().filter(|l| l.ph_type().is_some_and(|t| fits(want, t))).collect();
+                if places.is_empty() {
+                    return Err(bad(CMD, format!("this slide's layout ({}) has no {} placeholder", layout.name, want.xml())));
+                }
+                // Which other shapes on the slide already hold each place.
+                let holder = |place: &Shape| {
+                    shapes.iter().find(|o| o.id != id && o.ph.is_some() && resolve::parents(&ctx, o).0.is_some_and(|l| l.id == place.id))
+                };
+                let place = places.iter().find(|pl| holder(pl).is_none()).or(places.first()).copied().ok_or_else(|| bad(CMD, "no place"))?;
+                if let Some(old) = holder(place) {
+                    give_up(old, &mut changes);
+                }
+                let lph = place.ph.clone().unwrap_or_default();
+                changes
+                    .push((id, Some(tagged(&ctx, sh, Placeholder { kind: lph.kind, idx: lph.idx, vertical: lph.vertical, ..Default::default() }))));
+            }
+            crate::Target::Master { .. } | crate::Target::Layout { .. } => {
+                let master = matches!(target, crate::Target::Master { .. });
+                if !template_kinds(master).contains(&want) {
+                    let on = if master { "the slide master" } else { "a layout" };
+                    return Err(bad(CMD, format!("{on} can't have a {kind} placeholder (headers are for notes and handouts)")));
+                }
+                // The one of its kind already there gives up its place (and its index).
+                let old =
+                    (single(want) || master).then(|| shapes.iter().find(|o| o.id != id && o.ph_type().is_some_and(|t| same_kind(t, want)))).flatten();
+                let idx = match (want.is_title(), old.and_then(|o| o.ph.as_ref())) {
+                    (true, _) => 0,
+                    (_, Some(ph)) => ph.idx,
+                    _ => shapes.iter().filter_map(|x| x.ph.as_ref().map(|p| p.idx)).max().unwrap_or(0) + 1,
+                };
+                if let Some(old) = old {
+                    give_up(old, &mut changes);
+                }
+                changes.push((id, Some(tagged(&ctx, sh, Placeholder { kind: want, idx, ..Default::default() }))));
+            }
         }
-        // Which other shapes on the slide already hold each place.
-        let holder = |place: &Shape| {
-            slide.shapes.iter().find(|o| o.id != id && o.ph.is_some() && resolve::parents(&ctx, o).0.is_some_and(|l| l.id == place.id))
-        };
-        let place = places.iter().find(|pl| holder(pl).is_none()).or(places.first()).copied().ok_or_else(|| bad(CMD, "no place"))?;
-        if let Some(old) = holder(place) {
-            let empty = old.text.as_ref().is_none_or(|t| t.is_empty());
-            changes.push((old.id, if empty { None } else { Some(bake(&ctx, old)) }));
-            untagged = Some((if empty { "removed" } else { "untagged" }, old.id));
-        }
-        let lph = place.ph.clone().unwrap_or_default();
-        let mut new = if sh.ph.is_some() { bake(&ctx, sh) } else { sh.clone() };
-        new.xfrm = Some(resolve::xfrm(&ctx, sh));
-        if sh.text_box {
-            // A text box grows with its text; it keeps doing so as a placeholder.
-            let fit = resolve::body(&ctx, sh);
-            let body = &mut new.text.get_or_insert_with(Default::default).body;
-            body.autofit = body.autofit.or(fit.autofit);
-            body.wrap = body.wrap.or(fit.wrap);
-        }
-        new.text_box = false;
-        new.ph = Some(Placeholder { kind: lph.kind, idx: lph.idx, vertical: lph.vertical, ..Default::default() });
-        changes.push((id, Some(new)));
     }
     let r = s.edit(|doc, sel| {
-        let sl = doc.slides.get_mut(at).ok_or_else(|| bad(CMD, "no slide"))?;
-        let shapes = &mut Arc::make_mut(sl).shapes;
+        let shapes = crate::shapes_mut(doc, sel).ok_or_else(|| bad(CMD, "nothing to change"))?;
         for (cid, new) in changes {
             match new {
                 Some(n) => {
@@ -286,7 +329,8 @@ fn assign(s: &mut Session, p: &Value) -> Result<Value> {
                 None => shapes.retain(|x| x.id != cid),
             }
         }
-        sel.shapes.retain(|x| shapes.iter().any(|s| s.id == *x));
+        let left: Vec<ShapeId> = shapes.iter().map(|x| x.id).collect();
+        sel.shapes.retain(|x| left.contains(x));
         let mut out = json!({"id": id, "kind": kind});
         if let Some((key, u)) = untagged {
             out[key] = json!(u);

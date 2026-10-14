@@ -346,7 +346,7 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
         Some(k) => format!("{} placeholder", kind_name(k.xml(), false).trim_end_matches(" text")),
         None => kind_label(sh),
     };
-    let on_slide = app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides);
+    let target = app.session.active().map(|d| d.selection.target);
     ui.horizontal(|ui| {
         ui.set_min_height(30.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -373,7 +373,7 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
                 }
                 let r = icon_button(ui, Icon::Link, "Link", enabled(app, "insert.hyperlink"));
                 egui::Popup::menu(&r).width(260.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| link_field(app, ui));
-                if on_slide && matches!(sh.kind, ShapeKind::Shape) {
+                if target.is_some() && matches!(sh.kind, ShapeKind::Shape) {
                     let r = icon_button(ui, Icon::Tag, "Placeholder: what this box is on the slide's layout", true);
                     egui::Popup::menu(&r).width(220.0).show(|ui| placeholder_menu(app, ui, sh));
                 }
@@ -386,9 +386,21 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
     });
 }
 
-/// The placeholders of the current slide's layout a box can become: `(kind, name)`, one per name.
+/// The placeholders a box can become: on a slide, its layout's; on a layout or the master, the
+/// kinds they may have. `(kind, name)`, one per name.
 pub fn layout_places(app: &SlideApp) -> Vec<(String, String)> {
     let Some(st) = app.session.active() else { return vec![] };
+    if st.selection.target != deckcraft_engine::Target::Slides {
+        let master = matches!(st.selection.target, deckcraft_engine::Target::Master { .. });
+        let mut out: Vec<(String, String)> = vec![];
+        for k in deckcraft_engine::cmd::placeholder::template_kinds(master) {
+            let name = template_kind_name(k.xml());
+            if !out.iter().any(|(_, n)| *n == name) {
+                out.push((k.xml().to_string(), name));
+            }
+        }
+        return out;
+    }
     let Some(slide) = st.doc.slides.get(st.selection.slide) else { return vec![] };
     let Some((_, Some(layout))) = st.doc.master_for(slide) else { return vec![] };
     let mut out: Vec<(String, String)> = vec![];
@@ -401,10 +413,28 @@ pub fn layout_places(app: &SlideApp) -> Vec<(String, String)> {
     out
 }
 
+/// A placeholder kind as the menu on a layout or master names it (content and centred titles
+/// are kinds of their own there).
+fn template_kind_name(xml: &str) -> String {
+    match xml {
+        "ctrTitle" => "Centered title".into(),
+        "obj" => "Content".into(),
+        "media" => "Media".into(),
+        k => kind_name(k, false),
+    }
+}
+
 /// Make the box one of its layout's placeholders, or a plain box again.
 fn placeholder_menu(app: &mut SlideApp, ui: &mut Ui, sh: &Shape) {
-    let now = sh.ph_type().map(|k| kind_name(k.xml(), false));
-    ui.label(egui::RichText::new("Make this the slide's").font(theme::bold(12.5)));
+    let on_slide = app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides);
+    let name = |x: &str| if on_slide { kind_name(x, false) } else { template_kind_name(x) };
+    let now = sh.ph_type().map(|k| name(k.xml()));
+    let heading = match app.session.active().map(|d| d.selection.target) {
+        Some(deckcraft_engine::Target::Master { .. }) => "Make this the master's",
+        Some(deckcraft_engine::Target::Layout { .. }) => "Make this a placeholder",
+        _ => "Make this the slide's",
+    };
+    ui.label(egui::RichText::new(heading).font(theme::bold(12.5)));
     let places = layout_places(app);
     if places.is_empty() {
         ui.label(egui::RichText::new("This layout has no placeholders").font(theme::font(12.0)).weak());
