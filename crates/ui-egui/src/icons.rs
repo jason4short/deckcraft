@@ -306,6 +306,8 @@ icons! {
     TextTop => "text-top",
     TextMiddle => "text-middle",
     TextBottom => "text-bottom",
+    /// A slide on an easel: a presentation (document tabs).
+    Deck => "deck",
     /// A luggage tag: what placeholder of the layout a box is.
     Tag => "tag",
     /// A row of frames with a plus: the slide's animation states.
@@ -2342,6 +2344,11 @@ fn draw(p: &Pen<'_>, icon: Icon) {
             p.seg((4.0, 9.0), (7.0, 10.0), K);
             p.seg((15.0, 20.0), (14.0, 17.0), K);
             p.seg((20.0, 15.0), (17.0, 14.0), K);
+        }
+        I::Deck => {
+            p.rect(3.5, 4.5, 20.5, 15.5, 1.5, N, K);
+            p.seg((12.0, 15.5), (12.0, 18.0), K);
+            p.line(&[(8.0, 20.5), (12.0, 18.0), (16.0, 20.5)], K);
         }
         I::Styles => {
             for (x, y) in [(8.0, 8.0), (16.0, 8.0), (8.0, 16.0), (16.0, 16.0)] {

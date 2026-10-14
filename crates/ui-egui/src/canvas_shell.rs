@@ -91,11 +91,19 @@ fn sidebar(app: &mut SlideApp, ui: &mut Ui) {
             edge(ui, ui.max_rect().max.x, &t);
             header(app, ui);
             ui.add_space(6.0);
-            new_slide_row(app, ui);
+            if in_master {
+                master_row(app, ui);
+            } else {
+                new_slide_row(app, ui);
+            }
             ui.add_space(6.0);
             ui.painter().hline(ui.max_rect().x_range(), ui.cursor().min.y, Stroke::new(1.0, t.separator));
             if !in_master {
                 layers(app, ui);
+            }
+            if in_master {
+                crate::thumbs::master_list(app, ui);
+                return;
             }
             egui::ScrollArea::vertical().id_salt("canvas_slides").auto_shrink([false, false]).show(ui, |ui| {
                 ui.add_space(8.0);
@@ -122,7 +130,13 @@ fn header(app: &mut SlideApp, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                let sorter = app.ui.view == ViewMode::Sorter;
+                let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
+                let tip = if in_master { "Close slide masters" } else { "Edit slide masters and layouts" };
+                if icon_toggle(ui, Icon::SlideMaster, tip, true, in_master).clicked() {
+                    let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({}));
+                }
+                ui.add_space(6.0);
+                let sorter = app.ui.view == ViewMode::Sorter && !in_master;
                 if icon_toggle(ui, Icon::Grid, "Grid view", true, sorter).clicked() {
                     let _ = app.run("view.sorter", json!({}));
                 }
@@ -146,7 +160,45 @@ fn header(app: &mut SlideApp, ui: &mut Ui) {
                 });
             });
         });
-        ui.label(egui::RichText::new(place).font(theme::font(12.0)).color(t.text_dim));
+        let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
+        let sub = if in_master { "Editing slide masters".to_string() } else { place };
+        ui.label(egui::RichText::new(sub).font(theme::font(12.0)).color(if in_master { t.accent } else { t.text_dim }));
+    });
+}
+
+/// In Slide Master view: "Close masters" back to the slides, and + for a new layout.
+fn master_row(app: &mut SlideApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    egui::Frame::NONE.inner_margin(egui::Margin::symmetric(10, 0)).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            let w = ui.available_width() - 34.0;
+            let (r, resp) = ui.allocate_exact_size(vec2(w, 28.0), Sense::click());
+            ui.painter().rect(
+                r,
+                CornerRadius::same(6),
+                if resp.hovered() { t.hover } else { t.card },
+                Stroke::new(1.0, t.border),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, "Close masters", theme::font(13.0), t.text);
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Close masters"));
+            if resp.on_hover_text("Back to the slides").clicked() {
+                let _ = app.run("view.closeMaster", json!({}));
+            }
+            let (pr, presp) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
+            ui.painter().rect(
+                pr,
+                CornerRadius::same(6),
+                if presp.hovered() { t.hover } else { t.card },
+                Stroke::new(1.0, t.border),
+                egui::StrokeKind::Inside,
+            );
+            icons::paint(ui.painter(), pr.shrink(7.0), Icon::Plus, t.text, false);
+            presp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New layout"));
+            if presp.on_hover_text("New layout").clicked() {
+                let _ = app.run("master.insertLayout", json!({}));
+            }
+        });
     });
 }
 

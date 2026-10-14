@@ -207,8 +207,8 @@ fn a_layout_box_becomes_a_new_placeholder() {
 #[test]
 fn the_master_takes_its_five_kinds_only() {
     let mut s = deck();
-    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
-    s.select(|_, sel| sel.target = crate::Target::Master { master: 0 }).unwrap();
+    s.execute("view.slideMaster", &json!({"master": 0, "layout": null})).unwrap();
+    assert_eq!(s.doc().unwrap().selection.target, crate::Target::Master { master: 0 }, "layout: null opens the master itself");
     let id = template_box(&mut s, "Deck title");
     assert!(s.execute("placeholder.assign", &json!({"id": id, "kind": "pic"})).is_err());
     let r = s.execute("placeholder.assign", &json!({"id": id, "kind": "title"})).unwrap();

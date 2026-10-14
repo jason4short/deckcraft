@@ -506,7 +506,7 @@ pub fn slide_menu(app: &mut SlideApp, ui: &mut Ui, i: usize) {
     }
 }
 
-fn master_list(app: &mut SlideApp, ui: &mut Ui) {
+pub(crate) fn master_list(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
     let doc = st.doc.clone();
@@ -553,13 +553,37 @@ fn master_list(app: &mut SlideApp, ui: &mut Ui) {
                     Some(l) => m.layouts.get(l).map(|x| x.name.clone()).unwrap_or_default(),
                     None => format!("{} Slide Master", m.name),
                 };
-                let resp = resp.on_hover_text(name);
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, &name));
+                let resp = resp.on_hover_text(&name);
+                let pick = |app: &mut SlideApp| match li {
+                    Some(l) => {
+                        let _ = app.run("view.slideMaster", json!({"master": mi, "layout": l}));
+                    }
+                    // `layout: null` picks the master itself (no layout opens the current slide's).
+                    None => {
+                        let _ = app.run("view.slideMaster", json!({"master": mi, "layout": null}));
+                    }
+                };
                 if resp.clicked() {
-                    let p = match li {
-                        Some(l) => json!({"master": mi, "layout": l}),
-                        None => json!({"master": mi}),
-                    };
-                    let _ = app.run("view.slideMaster", p);
+                    pick(app);
+                }
+                if li.is_some() {
+                    resp.context_menu(|ui| {
+                        pick(app);
+                        if ui.button("Rename Layout…").clicked() {
+                            app.dialog = Some(crate::dialogs::Dialog::new("renameLayout"));
+                            ui.close();
+                        }
+                        if ui.button("New Layout").clicked() {
+                            let _ = app.run("master.insertLayout", json!({}));
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button("Delete Layout").clicked() {
+                            let _ = app.run("master.deleteLayout", json!({}));
+                            ui.close();
+                        }
+                    });
                 }
             }
         }

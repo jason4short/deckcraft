@@ -1225,6 +1225,7 @@ impl SlideApp {
         self.sync_backstage();
         self.sync_shell_prefs();
         ribbon::title_bar(self, ui);
+        ribbon::doc_strip(self, ui);
         if self.ui.shell == Shell::Canvas && self.backstage.is_none() {
             canvas_shell::show(self, ui);
             self.finish_frame(&ctx, t0);
