@@ -906,3 +906,25 @@ fn a_grouped_layer_follows_its_group_and_moves_on_the_slide() {
     assert!((on_slide(&s, b).x - 600.0).abs() < 0.01);
     assert!((on_slide(&s, a).x - 150.0).abs() < 0.01, "the sibling stays");
 }
+
+#[test]
+fn a_grouped_layers_x_follows_the_group() {
+    let mut s = session();
+    let a = s.execute("shape.insert", &json!({"preset": "rect", "rect": [400, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap() as u32;
+    let b = s.execute("shape.insert", &json!({"preset": "rect", "rect": [600, 100, 80, 60]})).unwrap()["id"].as_u64().unwrap() as u32;
+    s.execute("selection.select", &json!({"ids": [a, b]})).unwrap();
+    s.execute("arrange.group", &json!({})).unwrap();
+    // The group's X set to 0: its first layer is at 0 on the slide, and says so.
+    s.execute("shape.move", &json!({"x": 0})).unwrap();
+    s.execute("selection.select", &json!({"ids": [a]})).unwrap();
+    let st = s.doc().unwrap();
+    let x = cmd::xfrm_of(&st.doc, &st.selection, st.shape(ShapeId(a)).unwrap());
+    assert!(x.x.abs() < 0.01, "the layer reports where it is: {}", x.x);
+    // Setting the layer's X moves it there on the slide.
+    s.execute("shape.move", &json!({"x": 50})).unwrap();
+    let st = s.doc().unwrap();
+    let x = cmd::xfrm_of(&st.doc, &st.selection, st.shape(ShapeId(a)).unwrap());
+    assert!((x.x - 50.0).abs() < 0.01, "{}", x.x);
+    let inspect = s.execute("shape.inspect", &json!({"id": a})).unwrap();
+    assert!((inspect["box"]["x"].as_f64().unwrap() - 50.0).abs() < 0.01, "{inspect}");
+}
