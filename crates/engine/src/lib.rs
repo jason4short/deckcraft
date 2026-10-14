@@ -13,6 +13,7 @@ pub mod fonts;
 pub mod guard;
 pub mod keys;
 pub mod links;
+pub mod measure;
 pub mod recovery;
 pub mod sample;
 pub mod tools;

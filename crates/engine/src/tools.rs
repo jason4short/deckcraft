@@ -276,6 +276,14 @@ impl Session {
         None
     }
 
+    /// The innermost layer under `p`, inside groups.
+    pub fn deep_shape_at(&self, p: Point, tol: f64) -> Option<ShapeId> {
+        match self.deep_hit(self.active()?, p, tol)? {
+            Hit::Shape { id, .. } => Some(id),
+            _ => None,
+        }
+    }
+
     /// The innermost layer under `p`, looking inside groups (topmost first), as a shape hit.
     fn deep_hit(&self, st: &crate::DocState, p: Point, tol: f64) -> Option<Hit> {
         fn rec(st: &crate::DocState, shapes: &[Shape], p: Point, tol: f64, depth: usize, through: bool) -> Option<Hit> {

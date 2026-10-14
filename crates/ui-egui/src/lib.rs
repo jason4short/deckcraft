@@ -17,6 +17,7 @@ pub mod field_math;
 pub mod fillui;
 pub mod icons;
 pub mod inspector;
+pub mod measure_overlay;
 pub mod media;
 pub mod menus;
 pub mod panes;

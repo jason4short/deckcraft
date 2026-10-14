@@ -969,3 +969,20 @@ fn a_group_keeps_its_proportions_unless_shift_is_held() {
     drag(&mut s, true, (0.0, 80.0));
     assert!((size(&s).w / size(&s).h - r2).abs() > 0.05, "⇧ frees it: {:?}", size(&s));
 }
+
+#[test]
+fn option_hover_measures_from_the_selection() {
+    let mut s = session();
+    let a = s.execute("shape.insert", &json!({"preset": "rect", "rect": [100, 100, 50, 50]})).unwrap()["id"].as_u64().unwrap();
+    s.execute("shape.insert", &json!({"preset": "rect", "rect": [200, 110, 50, 30]})).unwrap();
+    s.execute("selection.select", &json!({"ids": [a]})).unwrap();
+    // Over the other rectangle: the 50 pt gap between them, and its box.
+    let (lines, target) = s.measure_hover(deckcraft_geom::Point::new(220.0, 120.0), 2.0, false);
+    assert_eq!(lines.iter().filter_map(|m| m.len).collect::<Vec<_>>(), vec![50.0]);
+    assert!(target.is_some());
+    // Over empty space (a corner, clear of the placeholders): to the slide's four edges.
+    let size = s.doc().unwrap().doc.slide_size;
+    let (lines, target) = s.measure_hover(deckcraft_geom::Point::new(size.width - 3.0, size.height - 3.0), 2.0, false);
+    assert_eq!(lines.iter().filter(|m| m.len.is_some()).count(), 4);
+    assert!(target.is_none());
+}
