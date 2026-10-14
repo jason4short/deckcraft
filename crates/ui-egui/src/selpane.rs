@@ -178,10 +178,20 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
             cresp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &label));
             icons::paint(&painter, cr, if open { Icon::ChevronDown } else { Icon::ChevronRight }, t.text_dim, false);
             if cresp.clicked() {
-                if open {
-                    app.selpane.collapsed.insert(row.id);
-                } else {
-                    app.selpane.collapsed.remove(&row.id);
+                // ⌥-click: the groups inside it too, as in canvas editors.
+                let mut ids = vec![row.id];
+                if ui.input(|i| i.modifiers.alt)
+                    && let Some(st) = app.session.active()
+                    && let Some(g) = deckcraft_model::find_shape(st.shapes(), deckcraft_model::ShapeId(row.id))
+                {
+                    nested_groups(g.children(), &mut ids, 0);
+                }
+                for id in ids {
+                    if open {
+                        app.selpane.collapsed.insert(id);
+                    } else {
+                        app.selpane.collapsed.remove(&id);
+                    }
                 }
             }
         }
@@ -292,6 +302,17 @@ pub fn list_marked(app: &mut SlideApp, ui: &mut Ui, marked: &HashSet<u32>) {
     let rest = ui.available_size();
     if rest.y > 0.0 {
         ui.allocate_exact_size(vec2(width, rest.y.min(400.0)), Sense::hover());
+    }
+}
+
+/// The ids of the groups among `shapes`, at every depth.
+fn nested_groups(shapes: &[deckcraft_model::Shape], out: &mut Vec<u32>, depth: usize) {
+    if depth > 64 {
+        return;
+    }
+    for s in shapes.iter().filter(|s| s.is_group()) {
+        out.push(s.id.0);
+        nested_groups(s.children(), out, depth + 1);
     }
 }
 

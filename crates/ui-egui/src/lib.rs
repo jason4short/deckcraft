@@ -15,6 +15,7 @@ pub mod credits;
 pub mod dialogs;
 pub mod field_math;
 pub mod fillui;
+pub mod form;
 pub mod icons;
 pub mod inspector;
 pub mod measure_overlay;
