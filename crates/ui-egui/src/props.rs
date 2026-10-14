@@ -340,7 +340,7 @@ fn header_row(app: &mut SlideApp, ui: &mut Ui, sh: &Shape, multi: bool, n: usize
     let t = Tokens::get(ui.ctx());
     let title = match sh.ph_type() {
         _ if multi => format!("{n} selected"),
-        Some(k) => format!("{} placeholder", kind_name(k.xml(), false)),
+        Some(k) => format!("{} placeholder", kind_name(k.xml(), false).trim_end_matches(" text")),
         None => kind_label(sh),
     };
     let on_slide = app.session.active().is_some_and(|d| d.selection.target == deckcraft_engine::Target::Slides);

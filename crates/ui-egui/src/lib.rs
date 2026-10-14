@@ -172,6 +172,9 @@ pub struct UiState {
     /// Format Shape pane: tab (`fill`, `effects`, `size`, `picture`, `text`).
     pub format_tab: String,
     pub grayscale: bool,
+    /// Canvas shell: the strip of the current slide's states under the slide, shown even when it
+    /// has none yet (it always shows while it has some).
+    pub states_strip: bool,
 }
 
 impl Default for UiState {
@@ -198,6 +201,7 @@ impl Default for UiState {
             presenter_view: true,
             ui_scale: 1.0,
             format_tab: "fill".into(),
+            states_strip: false,
             grayscale: false,
         }
     }
@@ -1025,6 +1029,9 @@ impl SlideApp {
                 egui::Event::Ime(ime) => self.ime_event(&ime),
                 egui::Event::Copy => {
                     let p = if slides_keys { json!({"scope": "slides"}) } else { json!({}) };
+                    if slides_keys {
+                        thumbs::select_runs(self);
+                    }
                     if let Ok(v) = self.session.execute("edit.copy", &p)
                         && let Some(t) = v.get("text").and_then(Value::as_str)
                     {
@@ -1034,6 +1041,9 @@ impl SlideApp {
                 egui::Event::Cut if nothing && !slides_keys => {}
                 egui::Event::Cut => {
                     let p = if slides_keys { json!({"scope": "slides"}) } else { json!({}) };
+                    if slides_keys {
+                        thumbs::select_runs(self);
+                    }
                     if let Ok(v) = self.session.execute("edit.cut", &p)
                         && let Some(t) = v.get("text").and_then(Value::as_str)
                     {

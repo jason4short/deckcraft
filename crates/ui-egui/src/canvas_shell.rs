@@ -35,6 +35,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             if app.ui.notes {
                 notes_card(app, ui);
             }
+            states_strip(app, ui);
             crate::canvas::show(app, ui);
         }
     });
@@ -354,6 +355,23 @@ fn notes_card(app: &mut SlideApp, ui: &mut Ui) {
         });
 }
 
+/// The current slide's states in a strip under the slide (see [`crate::states::strip_bar`]).
+fn states_strip(app: &mut SlideApp, ui: &mut Ui) {
+    if !crate::states::strip_shown(app) {
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    egui::Panel::bottom("canvas_states")
+        .exact_size(crate::states::STRIP_THUMB_H + 20.0)
+        .show_separator_line(false)
+        .frame(egui::Frame::NONE.inner_margin(egui::Margin { left: 20, right: 20, top: 10, bottom: 10 }))
+        .show(ui, |ui| {
+            let r = ui.max_rect().expand2(vec2(20.0, 10.0));
+            ui.painter().hline(r.x_range(), r.min.y, Stroke::new(1.0, t.separator));
+            crate::states::strip_bar(app, ui);
+        });
+}
+
 /// One tool button in the floating toolbar: the current tool is filled with the accent.
 fn tool(ui: &mut Ui, icon: Icon, tip: &str, on: bool, enabled: bool) -> egui::Response {
     tool_button(ui, icon, tip, on, enabled, true)
@@ -386,7 +404,7 @@ fn toolbar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("canvas_toolbar").exact_size(TOOLBAR_H).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |ui| {
         let area = ui.max_rect();
-        let w = 7.0 * 38.0 + 1.0 + 2.0 * 38.0 + 16.0;
+        let w = 7.0 * 38.0 + 1.0 + 3.0 * 38.0 + 16.0;
         let bar = Rect::from_center_size(pos2(area.center().x, area.center().y - 4.0), vec2(w, 48.0));
         let shadow = egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: t.shadow };
         ui.painter().add(shadow.as_shape(bar, CornerRadius::same(12)));
@@ -429,6 +447,10 @@ fn toolbar(app: &mut SlideApp, ui: &mut Ui) {
         ui.painter().vline(sep.center().x, sep.y_range(), Stroke::new(1.0, t.separator));
         if toggle(ui, Icon::NotesSmall, "Presenter notes", app.ui.notes).clicked() {
             let _ = app.run("view.notes", json!({}));
+        }
+        // The strip always shows while the slide has states; this keeps it open without.
+        if toggle(ui, Icon::States, "States under the slide", crate::states::strip_shown(app)).clicked() {
+            app.ui.states_strip = !crate::states::strip_shown(app);
         }
         if toggle(ui, Icon::Search, "Search commands (⇧⌘P)", false).clicked() {
             app.palette = Some((String::new(), 0));

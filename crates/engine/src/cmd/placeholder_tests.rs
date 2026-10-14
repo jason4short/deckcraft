@@ -118,6 +118,7 @@ fn assign_makes_a_text_box_the_slides_title() {
     assert!(sh.ph_type().is_some_and(|t| t.is_title()));
     assert!(!sh.text_box);
     assert_eq!(sh.xfrm.unwrap().x, 30.0, "it stays where it was");
+    assert_eq!(sh.text.as_ref().unwrap().body.autofit, Some(deckcraft_model::text::AutoFit::Shape), "it still grows with its text");
     assert!(shape(&s, 1, old).is_none(), "the empty layout title is gone");
     assert_eq!(title(&s, 1), id);
     // It now counts with the deck's titles: resetting puts it on the layout's place.

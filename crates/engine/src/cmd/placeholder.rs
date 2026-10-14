@@ -225,7 +225,8 @@ fn assign(s: &mut Session, p: &Value) -> Result<Value> {
         Some(id) => id,
         None => *st.selection.shapes.first().ok_or_else(|| bad(CMD, "select a shape"))?,
     };
-    let sh = slide.shapes.iter().find(|x| x.id == id).ok_or_else(|| bad(CMD, "not a shape on this slide (shapes in groups can't be placeholders)"))?;
+    let sh =
+        slide.shapes.iter().find(|x| x.id == id).ok_or_else(|| bad(CMD, "not a shape on this slide (shapes in groups can't be placeholders)"))?;
     let ctx = Ctx::for_slide(doc, slide).ok_or_else(|| bad(CMD, "no layout"))?;
     // (shape to replace, its replacement or None to delete)
     let mut changes: Vec<(ShapeId, Option<Shape>)> = vec![];
@@ -261,11 +262,18 @@ fn assign(s: &mut Session, p: &Value) -> Result<Value> {
         let lph = place.ph.clone().unwrap_or_default();
         let mut new = if sh.ph.is_some() { bake(&ctx, sh) } else { sh.clone() };
         new.xfrm = Some(resolve::xfrm(&ctx, sh));
+        if sh.text_box {
+            // A text box grows with its text; it keeps doing so as a placeholder.
+            let fit = resolve::body(&ctx, sh);
+            let body = &mut new.text.get_or_insert_with(Default::default).body;
+            body.autofit = body.autofit.or(fit.autofit);
+            body.wrap = body.wrap.or(fit.wrap);
+        }
         new.text_box = false;
         new.ph = Some(Placeholder { kind: lph.kind, idx: lph.idx, vertical: lph.vertical, ..Default::default() });
         changes.push((id, Some(new)));
     }
-    s.edit(|doc, sel| {
+    let r = s.edit(|doc, sel| {
         let sl = doc.slides.get_mut(at).ok_or_else(|| bad(CMD, "no slide"))?;
         let shapes = &mut Arc::make_mut(sl).shapes;
         for (cid, new) in changes {
@@ -284,7 +292,10 @@ fn assign(s: &mut Session, p: &Value) -> Result<Value> {
             out[key] = json!(u);
         }
         Ok(out)
-    })
+    })?;
+    // Its text may be set larger now: a box that grows with its text does.
+    super::text::fit_text_box(s, id)?;
+    Ok(r)
 }
 
 #[cfg(test)]
