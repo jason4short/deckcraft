@@ -48,6 +48,17 @@ pub fn ui_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
             app.close_presentation();
             return true;
         }
+        // ⌃Tab / ⌃⇧Tab: the next or previous presentation tab (⌘Tab is the Mac's app switcher).
+        (Tab, true, shift, false) => {
+            let n = app.session.documents().len();
+            if n < 2 {
+                return false;
+            }
+            let i = app.session.active_index().unwrap_or(0);
+            let to = if shift { (i + n - 1) % n } else { (i + 1) % n };
+            let _ = app.run("window.next", json!({"index": to}));
+            return true;
+        }
         (O, true, false, false) => "app.openDialog",
         (P, true, true, false) => "app.palette",
         (Comma, true, false, false) => "app.preferences",

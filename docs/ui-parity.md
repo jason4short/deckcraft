@@ -23,7 +23,7 @@ AGENTS.md §2). Dimension score: **~60% ready** (estimated), **30–50 h** to pa
 | Status bar: slide counter, language, notes, comments, views, zoom slider | yes | yes | |
 | Command search (Tell Me) | yes | command palette | #79 default entry fails |
 | Light / dark appearance | follows the system | light or dark; doesn't follow the system (#41) | 1–2 h |
-| One window per presentation, New Window, Arrange All | yes | tabs in one window; no New Window | 3–5 h |
+| One window per presentation, New Window, Arrange All | yes | tabs in one window: with two or more presentations open the title bar shows a tab each (name, a dot for unsaved changes, close; middle-click closes; + for a new one; ⌃Tab / ⌃⇧Tab and ⌘` switch); no New Window | 3–5 h |
 | Quick Access Toolbar customization | yes | no | P1 partial |
 
 ## File tab (Backstage)

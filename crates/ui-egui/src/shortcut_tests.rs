@@ -235,3 +235,68 @@ fn paste_to_replace_needs_a_selection_and_something_copied() {
     assert!(h.state_mut().run("edit.pasteToReplace", json!({})).is_err(), "nothing copied");
     assert_eq!(order(&h).len(), n);
 }
+
+// ----- Presentation tabs -----------------------------------------------------------------
+
+fn three_presentations() -> Harness<'static, SlideApp> {
+    let mut app = SlideApp::new(Session::with_new(), Services::default());
+    app.run("file.new", json!({})).unwrap();
+    app.run("file.new", json!({})).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_ui_state(
+        |ui, app: &mut SlideApp| {
+            app.logic(ui.ctx());
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(3);
+    h
+}
+
+fn active(h: &Harness<'static, SlideApp>) -> usize {
+    h.state().session.active_index().unwrap()
+}
+
+#[test]
+fn each_open_presentation_has_a_tab_to_switch_to_and_close() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = three_presentations();
+    assert_eq!(active(&h), 2, "the newest is current");
+    h.get_by_label("Presentation1").click();
+    h.run_steps(3);
+    assert_eq!(active(&h), 0, "a click switches");
+    h.get_by_label("Close Presentation2").click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.documents().len(), 2, "the close button closes that one");
+    h.get_by_label("New Presentation").click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.documents().len(), 3, "+ opens a new one");
+}
+
+#[test]
+fn a_tab_with_unsaved_changes_asks_before_closing() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = three_presentations();
+    h.state_mut().run("shape.insert", json!({"preset": "rect", "rect": [0, 0, 10, 10]})).unwrap();
+    h.run_steps(2);
+    h.get_by_label("Close Presentation3").click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.documents().len(), 3, "not closed yet");
+    assert!(h.state().dialog.is_some(), "the save prompt is up");
+}
+
+#[test]
+fn control_tab_goes_to_the_next_and_previous_presentation() {
+    let mut h = three_presentations();
+    press(&mut h, Key::Tab, Modifiers::CTRL);
+    assert_eq!(active(&h), 0, "wraps to the first");
+    press(&mut h, Key::Tab, Modifiers::CTRL | Modifiers::SHIFT);
+    assert_eq!(active(&h), 2);
+}
+
+#[test]
+fn one_presentation_shows_its_title_not_a_tab() {
+    use egui_kittest::kittest::Queryable;
+    let (h, _) = harness();
+    assert!(h.query_by_label("New Presentation").is_none());
+}
