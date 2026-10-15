@@ -506,7 +506,9 @@ pub fn invoke(app: &mut SlideApp, ctx: &egui::Context, id: &str) {
                 let _ = app.run("window.next", json!({"index": i}));
                 return;
             }
-            if let Err(e) = app.run(id, json!({})) {
+            // Reset Slide in the canvas layout keeps the slide's layers (nothing added).
+            let p = if id == "slide.reset" && app.ui.shell == crate::Shell::Canvas { json!({"adopt": true}) } else { json!({}) };
+            if let Err(e) = app.run(id, p) {
                 app.set_status(e);
             }
         }
