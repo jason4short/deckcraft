@@ -295,10 +295,11 @@ fn control_tab_goes_to_the_next_and_previous_presentation() {
 }
 
 #[test]
-fn one_presentation_shows_its_title_not_a_tab() {
+fn one_presentation_still_has_its_tab() {
     use egui_kittest::kittest::Queryable;
     let (h, _) = harness();
-    assert!(h.query_by_label("New Presentation").is_none());
+    assert!(h.query_by_label("New Presentation").is_some(), "the tab row shows with one presentation");
+    assert!(h.query_by_label("Home tab").is_some());
 }
 
 #[test]
