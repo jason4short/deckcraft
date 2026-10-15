@@ -225,6 +225,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("view.ruler", "Ruler", None, "{on?: bool}"),
     ("view.panels", "Show/Hide Side Panels", Some("Cmd+."), "{on?: bool} (canvas layout: both side panels)"),
     ("view.leftPanel", "Show/Hide Left Panel", Some("Alt+Cmd+."), "{on?: bool} (canvas layout: slides and layers)"),
+    ("view.collapseLayers", "Collapse Layers", Some("Alt+L"), "{} (fold every group in the Layers list)"),
     ("view.gridlines", "Gridlines", Some("Shift+F9"), "{on?: bool}"),
     ("view.guides", "Guides", Some("Alt+F9"), "{on?: bool}"),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "{}"),
@@ -609,6 +610,11 @@ impl SlideApp {
                 self.ui.hide_right = !shown;
             }
             "view.leftPanel" => self.ui.hide_left = !self.flag(p, !self.ui.hide_left),
+            "view.collapseLayers" => {
+                if let Some(d) = self.session.active() {
+                    self.selpane.collapsed.extend(selpane::all_groups(d.shapes()));
+                }
+            }
             "view.gridlines" => self.ui.gridlines = self.flag(p, self.ui.gridlines),
             "view.guides" => self.ui.guides = self.flag(p, self.ui.guides),
             "view.zoomIn" | "view.zoomOut" => {
