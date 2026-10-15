@@ -300,3 +300,21 @@ fn one_presentation_shows_its_title_not_a_tab() {
     let (h, _) = harness();
     assert!(h.query_by_label("New Presentation").is_none());
 }
+
+#[test]
+fn command_l_toggles_the_lock_and_shift_command_l_unlocks_everything_in_the_canvas_layout() {
+    let (mut h, ids) = harness();
+    h.state_mut().run("view.shell", json!({"shell": "canvas"})).unwrap();
+    h.state_mut().run("selection.select", json!({"ids": [ids[0].0, ids[1].0]})).unwrap();
+    h.run_steps(2);
+    let locked = |h: &Harness<'static, SlideApp>, id: ShapeId| get(h, id).locked;
+    press(&mut h, Key::L, CMD);
+    assert!(locked(&h, ids[0]) && locked(&h, ids[1]), "⌘L locks");
+    press(&mut h, Key::L, CMD);
+    assert!(!locked(&h, ids[0]), "and unlocks again");
+    press(&mut h, Key::L, CMD);
+    h.state_mut().run("slide.go", json!({"index": 0})).unwrap();
+    h.run_steps(2);
+    press(&mut h, Key::L, CMD | Modifiers::SHIFT);
+    assert!(!locked(&h, ids[0]) && !locked(&h, ids[1]), "⇧⌘L unlocks every layer, nothing selected");
+}
