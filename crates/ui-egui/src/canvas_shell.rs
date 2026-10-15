@@ -96,8 +96,8 @@ fn sidebar(app: &mut SlideApp, ui: &mut Ui) {
         .show(ui, |ui| {
             app.ui.thumbs_width = ui.available_width();
             edge(ui, ui.max_rect().max.x, &t);
-            header(app, ui);
-            ui.add_space(6.0);
+            // The presentation's name and folder are in the title bar; its commands in the menus.
+            ui.add_space(12.0);
             if in_master {
                 master_row(app, ui);
             } else {
@@ -146,66 +146,11 @@ fn hidden_panel_buttons(app: &mut SlideApp, ui: &mut Ui) {
     }
 }
 
-/// Name and folder of the presentation, and the slide / grid view switch.
-fn header(app: &mut SlideApp, ui: &mut Ui) {
-    let t = Tokens::get(ui.ctx());
-    let Some(st) = app.session.active() else { return };
-    let title = st.title();
-    let place = st
-        .path
-        .as_deref()
-        .and_then(|p| std::path::Path::new(p).parent())
-        .and_then(|p| p.file_name())
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Not saved".into());
-    let dirty = st.is_dirty();
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 14, right: 10, top: 12, bottom: 0 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                if icon_toggle(ui, Icon::PanelLeft, "Hide the left panel (⌥⌘.)", true, false).clicked() {
-                    app.ui.hide_left = true;
-                }
-                let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
-                let tip = if in_master { "Close slide masters" } else { "Edit slide masters and layouts" };
-                if icon_toggle(ui, Icon::SlideMaster, tip, true, in_master).clicked() {
-                    let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({}));
-                }
-                ui.add_space(6.0);
-                let sorter = app.ui.view == ViewMode::Sorter && !in_master;
-                if icon_toggle(ui, Icon::Grid, "Grid view", true, sorter).clicked() {
-                    let _ = app.run("view.sorter", json!({}));
-                }
-                if icon_toggle(ui, Icon::ViewNormalSmall, "Slide view", true, !sorter).clicked() {
-                    let _ = app.run("view.normal", json!({}));
-                }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    let name = format!("{title}{}", if dirty { " •" } else { "" });
-                    let r = ui.add(egui::Button::new(egui::RichText::new(name).font(theme::bold(15.0))).frame(false).truncate());
-                    egui::Popup::menu(&r).show(|ui| {
-                        if ui.button("Home").clicked() {
-                            let _ = app.run("app.home", json!({}));
-                        }
-                        if ui.button("Save").clicked() {
-                            app.save();
-                        }
-                        for (label, page) in [("Info…", "info"), ("Save As…", "saveAs"), ("Export…", "export"), ("Print…", "print")] {
-                            if ui.button(label).clicked() {
-                                let _ = app.run("app.backstage", json!({"page": page}));
-                            }
-                        }
-                        ui.separator();
-                        if ui.button("Close").clicked() {
-                            let _ = app.run("app.closePresentation", json!({}));
-                        }
-                    });
-                });
-            });
-        });
-        let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
-        let sub = if in_master { "Editing slide masters".to_string() } else { place };
-        ui.label(egui::RichText::new(sub).font(theme::font(12.0)).color(if in_master { t.accent } else { t.text_dim }));
-    });
+/// Hide the left panel (⌥⌘.), at the end of its first row.
+fn hide_panel_button(app: &mut SlideApp, ui: &mut Ui) {
+    if icon_toggle(ui, Icon::PanelLeft, "Hide the left panel (⌥⌘.)", true, false).clicked() {
+        app.ui.hide_left = true;
+    }
 }
 
 /// In Slide Master view: "Close masters" back to the slides, and + for a new layout.
@@ -213,7 +158,7 @@ fn master_row(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.inner_margin(egui::Margin::symmetric(10, 0)).show(ui, |ui| {
         ui.horizontal(|ui| {
-            let w = ui.available_width() - 34.0;
+            let w = ui.available_width() - 34.0 - 30.0;
             let (r, resp) = ui.allocate_exact_size(vec2(w, 28.0), Sense::click());
             ui.painter().rect(
                 r,
@@ -240,6 +185,7 @@ fn master_row(app: &mut SlideApp, ui: &mut Ui) {
             if presp.on_hover_text("New layout").clicked() {
                 let _ = app.run("master.insertLayout", json!({}));
             }
+            hide_panel_button(app, ui);
         });
     });
 }
@@ -250,7 +196,7 @@ fn new_slide_row(app: &mut SlideApp, ui: &mut Ui) {
     let en = crate::ribbon::enabled(app, "slide.new");
     egui::Frame::NONE.inner_margin(egui::Margin::symmetric(10, 0)).show(ui, |ui| {
         ui.horizontal(|ui| {
-            let w = ui.available_width() - 34.0;
+            let w = ui.available_width() - 34.0 - 30.0;
             let (r, resp) = ui.allocate_exact_size(vec2(w, 28.0), if en { Sense::click() } else { Sense::hover() });
             ui.painter().rect(
                 r,
@@ -286,6 +232,7 @@ fn new_slide_row(app: &mut SlideApp, ui: &mut Ui) {
             if presp.on_hover_text("New Slide (⇧⌘N)").clicked() {
                 let _ = app.run("slide.new", json!({}));
             }
+            hide_panel_button(app, ui);
         });
     });
 }
@@ -353,20 +300,23 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
         });
 }
 
-/// Sort (the grid of slides), Animate (the panel's states and effects) and Present, as big
-/// buttons across the top of the panel.
+/// The view controls, as big toggles across the top of the panel: Grid (the grid of slides, or
+/// one slide at a time), Masters (editing the slide masters), Animate (the states and effects
+/// panel) and Play (present from this slide).
 fn inspector_header(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
-    let tile = 52.0;
-    let col = w / 3.0;
+    let tile = 48.0;
+    let col = w / 4.0;
     let (row, _) = ui.allocate_exact_size(vec2(w, tile + 24.0), Sense::hover());
-    let sorter = app.ui.view == ViewMode::Sorter;
+    let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
+    let sorter = app.ui.view == ViewMode::Sorter && !in_master;
     let animate = app.ui.inspector_tab == "animate";
     let items = [
-        (Icon::Grid, "Sort", "Grid of slides", sorter),
-        (Icon::Play, "Animate", "States and effects", animate),
-        (Icon::Present, "Present", "Present from this slide (⌘↩)", false),
+        (Icon::Grid, "Grid", if sorter { "Back to one slide at a time" } else { "See all the slides in a grid" }, sorter),
+        (Icon::SlideMaster, "Masters", if in_master { "Close the slide masters" } else { "Edit the slide masters and layouts" }, in_master),
+        (Icon::States, "Animate", "States and effects", animate),
+        (Icon::Play, "Play", "Present from this slide (⌘↩)", false),
     ];
     for (k, (icon, label, tip, on)) in items.into_iter().enumerate() {
         let cx = row.min.x + col * (k as f32 + 0.5);
@@ -388,9 +338,15 @@ fn inspector_header(app: &mut SlideApp, ui: &mut Ui) {
         if resp.on_hover_text(tip).clicked() {
             match k {
                 0 => {
+                    if in_master {
+                        let _ = app.run("view.closeMaster", json!({}));
+                    }
                     let _ = app.run(if sorter { "view.normal" } else { "view.sorter" }, json!({}));
                 }
-                1 => app.ui.inspector_tab = if animate { "design".into() } else { "animate".into() },
+                1 => {
+                    let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({}));
+                }
+                2 => app.ui.inspector_tab = if animate { "design".into() } else { "animate".into() },
                 _ => {
                     let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
                     app.start_show(from, false);

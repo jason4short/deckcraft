@@ -49,8 +49,8 @@ fn the_canvas_shell_replaces_the_ribbon_with_sidebar_inspector_and_toolbar() {
     let h = harness(Shell::Canvas);
     assert!(h.query_by_label("Home").is_none() && h.query_by_label("Transitions").is_none(), "no ribbon tabs");
     assert!(h.query_by_label("File").is_some() && h.query_by_label("Arrange").is_some(), "the menus under the title bar (no native menu here)");
-    for label in ["Layers", "Sort", "Animate", "Present", "Select (V)", "Text box (T)"] {
-        assert!(h.query_by_label(label).is_some(), "`{label}` is shown");
+    for label in ["Layers", "Grid", "Masters", "Animate", "Play", "Select (V)", "Text box (T)"] {
+        assert!(h.query_all_by_label(label).next().is_some(), "`{label}` is shown");
     }
     assert!(h.state().slide_rect.is_some(), "the slide is on the canvas");
 
@@ -82,10 +82,10 @@ fn the_panel_buttons_animate_sort_and_present() {
     h.get_by_label("Animate").click();
     h.run_steps(2);
     assert_eq!(h.state().ui.inspector_tab, "design", "pressed again, back to the design panel");
-    h.get_by_label("Sort").click();
+    h.get_by_label("Grid").click();
     h.run_steps(2);
     assert_eq!(h.state().ui.view, crate::ViewMode::Sorter);
-    h.get_by_label("Sort").click();
+    h.get_by_label("Grid").click();
     h.run_steps(2);
     assert_eq!(h.state().ui.view, crate::ViewMode::Normal);
 }
@@ -229,7 +229,7 @@ fn the_inspector_shows_a_title_size_in_pixels() {
 #[test]
 fn the_sidebar_opens_and_closes_the_slide_masters() {
     let mut h = harness(Shell::Canvas);
-    h.get_by_label("Edit slide masters and layouts").click();
+    h.get_by_label("Masters").click();
     h.run_steps(3);
     let target = |h: &Harness<'static, SlideApp>| h.state().session.active().unwrap().selection.target;
     assert!(matches!(target(&h), deckcraft_engine::Target::Layout { .. }), "opens on the slide's layout");
