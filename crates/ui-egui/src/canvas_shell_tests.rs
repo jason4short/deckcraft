@@ -73,21 +73,32 @@ fn switching_layouts_leaves_the_presentation_alone() {
 }
 
 #[test]
-fn the_panel_buttons_animate_sort_and_present() {
+fn the_views_are_exclusive() {
     let mut h = harness(Shell::Canvas);
-    assert_eq!(h.state().ui.inspector_tab, "design");
+    let now = |h: &Harness<'static, SlideApp>| super::view(h.state());
+    assert_eq!(now(&h), super::View::Slide);
     h.get_by_label("Animate").click();
     h.run_steps(2);
-    assert_eq!(h.state().ui.inspector_tab, "animate");
-    h.get_by_label("Animate").click();
+    assert_eq!(now(&h), super::View::Animate);
+    // Masters replaces Animate: the two never show together.
+    h.get_by_label("Masters").click();
     h.run_steps(2);
-    assert_eq!(h.state().ui.inspector_tab, "design", "pressed again, back to the design panel");
+    assert_eq!(now(&h), super::View::Masters);
+    assert_eq!(h.state().ui.inspector_tab, "design", "Animate is off in the masters");
     h.get_by_label("Grid").click();
     h.run_steps(2);
-    assert_eq!(h.state().ui.view, crate::ViewMode::Sorter);
-    h.get_by_label("Grid").click();
+    assert_eq!(now(&h), super::View::Grid, "the grid leaves the masters");
+    assert_eq!(h.state().session.active().unwrap().selection.target, deckcraft_engine::Target::Slides);
+    h.get_by_label("Single slide").click();
     h.run_steps(2);
+    assert_eq!(now(&h), super::View::Slide);
     assert_eq!(h.state().ui.view, crate::ViewMode::Normal);
+    // Opened another way (the View menu), the masters still turn Animate off.
+    h.get_by_label("Animate").click();
+    h.run_steps(2);
+    h.state_mut().run("view.slideMaster", json!({})).unwrap();
+    h.run_steps(2);
+    assert_eq!(h.state().ui.inspector_tab, "design");
 }
 
 #[test]

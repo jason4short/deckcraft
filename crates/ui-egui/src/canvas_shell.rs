@@ -25,6 +25,11 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |_| {});
         return;
     }
+    // The views are exclusive: Animate is off in the masters and the grid, however they were
+    // opened (View menu, keys).
+    if app.ui.inspector_tab == "animate" && matches!(view(app), View::Masters | View::Grid) {
+        app.ui.inspector_tab = "design".into();
+    }
     if !app.ui.hide_left {
         sidebar(app, ui);
     }
@@ -299,33 +304,61 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
         });
 }
 
-/// The view controls in the toolbar: Grid (the grid of slides, or one slide at a time), Masters
-/// (editing the slide masters), Animate (the states and effects panel) and Play (present from
-/// this slide).
-fn view_toggles(app: &mut SlideApp, ui: &mut Ui) {
+/// The canvas layout's views, one at a time: one slide, the grid of slides, the slide masters,
+/// and animating (the states and effects panel beside the slide).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum View {
+    Slide,
+    Grid,
+    Masters,
+    Animate,
+}
+
+/// The view shown now.
+pub fn view(app: &SlideApp) -> View {
     let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
-    let sorter = app.ui.view == ViewMode::Sorter && !in_master;
-    let animate = app.ui.inspector_tab == "animate";
-    if view_toggle(ui, Icon::Grid, "Grid", if sorter { "Back to one slide at a time" } else { "All the slides in a grid" }, sorter).clicked() {
-        if in_master {
-            let _ = app.run("view.closeMaster", json!({}));
+    if in_master {
+        View::Masters
+    } else if app.ui.view == ViewMode::Sorter {
+        View::Grid
+    } else if app.ui.inspector_tab == "animate" {
+        View::Animate
+    } else {
+        View::Slide
+    }
+}
+
+/// Switch to view `v`, leaving whichever one was shown.
+pub fn set_view(app: &mut SlideApp, v: View) {
+    let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
+    if in_master && v != View::Masters {
+        let _ = app.run("view.closeMaster", json!({}));
+    }
+    let _ = app.run(if v == View::Grid { "view.sorter" } else { "view.normal" }, json!({}));
+    app.ui.inspector_tab = if v == View::Animate { "animate".into() } else { "design".into() };
+    if v == View::Masters && !in_master {
+        let _ = app.run("view.slideMaster", json!({}));
+    }
+}
+
+/// The views in the toolbar, exclusive: Slide, Grid, Masters, Animate (the one shown is
+/// highlighted; clicking Masters or Animate again goes back to the slide), then Play.
+fn view_toggles(app: &mut SlideApp, ui: &mut Ui) {
+    let now = view(app);
+    let items = [
+        (View::Slide, Icon::ViewNormalSmall, "Single slide", "One slide at a time"),
+        (View::Grid, Icon::Grid, "Grid", "All the slides in a grid"),
+        (View::Masters, Icon::SlideMaster, "Masters", "Edit the slide masters and layouts"),
+        (View::Animate, Icon::States, "Animate", "States and effects"),
+    ];
+    for (v, icon, label, tip) in items {
+        if view_toggle(ui, icon, label, tip, now == v).clicked() {
+            let to = if now == v && matches!(v, View::Masters | View::Animate) { View::Slide } else { v };
+            set_view(app, to);
         }
-        let _ = app.run(if sorter { "view.normal" } else { "view.sorter" }, json!({}));
     }
-    if view_toggle(
-        ui,
-        Icon::SlideMaster,
-        "Masters",
-        if in_master { "Close the slide masters" } else { "Edit the slide masters and layouts" },
-        in_master,
-    )
-    .clicked()
-    {
-        let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({}));
-    }
-    if view_toggle(ui, Icon::States, "Animate", "States and effects", animate).clicked() {
-        app.ui.inspector_tab = if animate { "design".into() } else { "animate".into() };
-    }
+    let sep = ui.allocate_exact_size(vec2(9.0, 28.0), Sense::hover()).0;
+    ui.painter().vline(sep.center().x, sep.y_range(), Stroke::new(1.0, Tokens::get(ui.ctx()).separator));
     if view_toggle(ui, Icon::Play, "Play", "Present from this slide (⌘↩)", false).clicked() {
         let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
         app.start_show(from, false);
@@ -435,7 +468,7 @@ fn toolbar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("canvas_toolbar").exact_size(TOOLBAR_H).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |ui| {
         let area = ui.max_rect();
-        let w = 7.0 * 38.0 + 9.0 + 4.0 * 38.0 + 9.0 + 50.0 + 16.0;
+        let w = 7.0 * 38.0 + 9.0 + 4.0 * 38.0 + 9.0 + 38.0 + 9.0 + 50.0 + 16.0;
         let bar = Rect::from_center_size(pos2(area.center().x, area.center().y - 4.0), vec2(w, 48.0));
         let shadow = egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: t.shadow };
         ui.painter().add(shadow.as_shape(bar, CornerRadius::same(12)));
