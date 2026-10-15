@@ -27,7 +27,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     }
     // The views are exclusive: Animate is off in the masters and the grid, however they were
     // opened (View menu, keys).
-    if app.ui.inspector_tab == "animate" && matches!(view(app), View::Masters | View::Grid) {
+    if app.ui.inspector_tab == "animate" && view(app) != View::Slide {
         app.ui.inspector_tab = "design".into();
     }
     if !app.ui.hide_left {
@@ -285,6 +285,8 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
         .frame(egui::Frame::NONE.fill(t.card).inner_margin(egui::Margin { left: 12, right: 12, top: 10, bottom: 0 }))
         .show(ui, |ui| {
             edge(ui, ui.max_rect().min.x - 12.0, &t);
+            panel_tabs(app, ui);
+            ui.add_space(6.0);
             let r = ui.max_rect();
             ui.painter().hline(r.x_range().expand(12.0), ui.cursor().min.y, Stroke::new(1.0, t.separator));
             ui.add_space(8.0);
@@ -304,14 +306,13 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
         });
 }
 
-/// The canvas layout's views, one at a time: one slide, the grid of slides, the slide masters,
-/// and animating (the states and effects panel beside the slide).
+/// The canvas layout's views, one at a time: one slide, the grid of slides, and the slide masters.
+/// (Animating is a panel tab, beside Design, on the single slide.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
     Slide,
     Grid,
     Masters,
-    Animate,
 }
 
 /// The view shown now.
@@ -321,40 +322,38 @@ pub fn view(app: &SlideApp) -> View {
         View::Masters
     } else if app.ui.view == ViewMode::Sorter {
         View::Grid
-    } else if app.ui.inspector_tab == "animate" {
-        View::Animate
     } else {
         View::Slide
     }
 }
 
-/// Switch to view `v`, leaving whichever one was shown.
+/// Switch to view `v`, leaving whichever one was shown (the Animate tab closes outside the slide).
 pub fn set_view(app: &mut SlideApp, v: View) {
     let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
     if in_master && v != View::Masters {
         let _ = app.run("view.closeMaster", json!({}));
     }
     let _ = app.run(if v == View::Grid { "view.sorter" } else { "view.normal" }, json!({}));
-    app.ui.inspector_tab = if v == View::Animate { "animate".into() } else { "design".into() };
+    if v != View::Slide {
+        app.ui.inspector_tab = "design".into();
+    }
     if v == View::Masters && !in_master {
         let _ = app.run("view.slideMaster", json!({}));
     }
 }
 
-/// The views in the toolbar, exclusive: Slide, Grid, Masters, Animate (the one shown is
-/// highlighted; clicking Masters or Animate again goes back to the slide), then Play.
+/// The views in the toolbar, exclusive: Single slide, Grid, Masters (the one shown is
+/// highlighted; clicking Masters again goes back to the slide), then Play.
 fn view_toggles(app: &mut SlideApp, ui: &mut Ui) {
     let now = view(app);
     let items = [
         (View::Slide, Icon::ViewNormalSmall, "Single slide", "One slide at a time"),
         (View::Grid, Icon::Grid, "Grid", "All the slides in a grid"),
         (View::Masters, Icon::SlideMaster, "Masters", "Edit the slide masters and layouts"),
-        (View::Animate, Icon::States, "Animate", "States and effects"),
     ];
     for (v, icon, label, tip) in items {
         if view_toggle(ui, icon, label, tip, now == v).clicked() {
-            let to = if now == v && matches!(v, View::Masters | View::Animate) { View::Slide } else { v };
-            set_view(app, to);
+            set_view(app, if now == v && v == View::Masters { View::Slide } else { v });
         }
     }
     let sep = ui.allocate_exact_size(vec2(9.0, 28.0), Sense::hover()).0;
@@ -362,6 +361,40 @@ fn view_toggles(app: &mut SlideApp, ui: &mut Ui) {
     if view_toggle(ui, Icon::Play, "Play", "Present from this slide (⌘↩)", false).clicked() {
         let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
         app.start_show(from, false);
+    }
+}
+
+/// Design | Animate across the top of the panel (as canvas editors' Design | Prototype). Animate
+/// is for the slide: greyed out in the masters and the grid.
+fn panel_tabs(app: &mut SlideApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let can_animate = view(app) == View::Slide;
+    let w = ui.available_width();
+    let (r, _) = ui.allocate_exact_size(vec2(w, 30.0), Sense::hover());
+    ui.painter().rect_filled(r, CornerRadius::same(7), t.field);
+    for (k, (id, label)) in [("design", "Design"), ("animate", "Animate")].into_iter().enumerate() {
+        let cell = Rect::from_min_size(pos2(r.min.x + k as f32 * w / 2.0, r.min.y), vec2(w / 2.0, r.height()));
+        let enabled = id == "design" || can_animate;
+        let resp = ui.interact(cell, ui.id().with(("panel-tab", id)), if enabled { Sense::click() } else { Sense::hover() });
+        let on = app.ui.inspector_tab == id || (id == "design" && app.ui.inspector_tab != "animate");
+        if on {
+            ui.painter().rect(cell.shrink(2.0), CornerRadius::same(6), t.card, Stroke::new(1.0, t.card_border), egui::StrokeKind::Inside);
+        } else if enabled && resp.hovered() {
+            ui.painter().rect_filled(cell.shrink(2.0), CornerRadius::same(6), t.hover);
+        }
+        let ink = if !enabled {
+            t.text_faint
+        } else if on {
+            t.text
+        } else {
+            t.text_dim
+        };
+        ui.painter().text(cell.center(), Align2::CENTER_CENTER, label, if on { theme::bold(13.0) } else { theme::font(13.0) }, ink);
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, on, label));
+        let resp = if enabled { resp } else { resp.on_hover_text("Animating is for slides: back to a single slide to animate") };
+        if resp.clicked() {
+            app.ui.inspector_tab = id.into();
+        }
     }
 }
 
@@ -468,7 +501,7 @@ fn toolbar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("canvas_toolbar").exact_size(TOOLBAR_H).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |ui| {
         let area = ui.max_rect();
-        let w = 7.0 * 38.0 + 9.0 + 4.0 * 38.0 + 9.0 + 38.0 + 9.0 + 50.0 + 16.0;
+        let w = 7.0 * 38.0 + 9.0 + 3.0 * 38.0 + 9.0 + 38.0 + 9.0 + 50.0 + 16.0;
         let bar = Rect::from_center_size(pos2(area.center().x, area.center().y - 4.0), vec2(w, 48.0));
         let shadow = egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: t.shadow };
         ui.painter().add(shadow.as_shape(bar, CornerRadius::same(12)));

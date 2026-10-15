@@ -49,7 +49,7 @@ fn the_canvas_shell_replaces_the_ribbon_with_sidebar_inspector_and_toolbar() {
     let h = harness(Shell::Canvas);
     assert!(h.query_by_label("Home").is_none() && h.query_by_label("Transitions").is_none(), "no ribbon tabs");
     assert!(h.query_by_label("File").is_some() && h.query_by_label("Arrange").is_some(), "the menus under the title bar (no native menu here)");
-    for label in ["Layers", "Grid", "Masters", "Animate", "Play", "Select (V)", "Text box (T)"] {
+    for label in ["Layers", "Single slide", "Grid", "Masters", "Design", "Animate", "Play", "Select (V)", "Text box (T)"] {
         assert!(h.query_all_by_label(label).next().is_some(), "`{label}` is shown");
     }
     assert!(h.state().slide_rect.is_some(), "the slide is on the canvas");
@@ -73,18 +73,27 @@ fn switching_layouts_leaves_the_presentation_alone() {
 }
 
 #[test]
-fn the_views_are_exclusive() {
+fn the_views_are_exclusive_and_animate_is_a_panel_tab() {
     let mut h = harness(Shell::Canvas);
     let now = |h: &Harness<'static, SlideApp>| super::view(h.state());
+    let tab = |h: &Harness<'static, SlideApp>| h.state().ui.inspector_tab.clone();
     assert_eq!(now(&h), super::View::Slide);
     h.get_by_label("Animate").click();
     h.run_steps(2);
-    assert_eq!(now(&h), super::View::Animate);
-    // Masters replaces Animate: the two never show together.
+    assert_eq!(tab(&h), "animate", "the panel's Animate tab");
+    h.get_by_label("Design").click();
+    h.run_steps(2);
+    assert_eq!(tab(&h), "design");
+    h.get_by_label("Animate").click();
+    h.run_steps(2);
+    // Masters: Animate goes back to Design and can't be picked there.
     h.get_by_label("Masters").click();
     h.run_steps(2);
     assert_eq!(now(&h), super::View::Masters);
-    assert_eq!(h.state().ui.inspector_tab, "design", "Animate is off in the masters");
+    assert_eq!(tab(&h), "design", "Animate is off in the masters");
+    h.get_by_label("Animate").click();
+    h.run_steps(2);
+    assert_eq!(tab(&h), "design", "and greyed out there");
     h.get_by_label("Grid").click();
     h.run_steps(2);
     assert_eq!(now(&h), super::View::Grid, "the grid leaves the masters");
@@ -92,13 +101,12 @@ fn the_views_are_exclusive() {
     h.get_by_label("Single slide").click();
     h.run_steps(2);
     assert_eq!(now(&h), super::View::Slide);
-    assert_eq!(h.state().ui.view, crate::ViewMode::Normal);
     // Opened another way (the View menu), the masters still turn Animate off.
     h.get_by_label("Animate").click();
     h.run_steps(2);
     h.state_mut().run("view.slideMaster", json!({})).unwrap();
     h.run_steps(2);
-    assert_eq!(h.state().ui.inspector_tab, "design");
+    assert_eq!(tab(&h), "design");
 }
 
 #[test]
