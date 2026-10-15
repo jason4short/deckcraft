@@ -32,11 +32,12 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         inspector(app, ui);
     }
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+        // The toolbar in every view: its Grid button brings the slide back from the grid.
+        toolbar(app, ui);
         match app.ui.view {
             ViewMode::Sorter => crate::sorter::show(app, ui),
             ViewMode::NotesPage => crate::sorter::notes_page(app, ui),
             ViewMode::Normal | ViewMode::Outline | ViewMode::Reading => {
-                toolbar(app, ui);
                 if app.ui.notes {
                     notes_card(app, ui);
                 }
@@ -279,8 +280,6 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
         .frame(egui::Frame::NONE.fill(t.card).inner_margin(egui::Margin { left: 12, right: 12, top: 10, bottom: 0 }))
         .show(ui, |ui| {
             edge(ui, ui.max_rect().min.x - 12.0, &t);
-            inspector_header(app, ui);
-            ui.add_space(4.0);
             let r = ui.max_rect();
             ui.painter().hline(r.x_range().expand(12.0), ui.cursor().min.y, Stroke::new(1.0, t.separator));
             ui.add_space(8.0);
@@ -300,59 +299,36 @@ fn inspector(app: &mut SlideApp, ui: &mut Ui) {
         });
 }
 
-/// The view controls, as big toggles across the top of the panel: Grid (the grid of slides, or
-/// one slide at a time), Masters (editing the slide masters), Animate (the states and effects
-/// panel) and Play (present from this slide).
-fn inspector_header(app: &mut SlideApp, ui: &mut Ui) {
-    let t = Tokens::get(ui.ctx());
-    let w = ui.available_width();
-    let tile = 48.0;
-    let col = w / 4.0;
-    let (row, _) = ui.allocate_exact_size(vec2(w, tile + 24.0), Sense::hover());
+/// The view controls in the toolbar: Grid (the grid of slides, or one slide at a time), Masters
+/// (editing the slide masters), Animate (the states and effects panel) and Play (present from
+/// this slide).
+fn view_toggles(app: &mut SlideApp, ui: &mut Ui) {
     let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
     let sorter = app.ui.view == ViewMode::Sorter && !in_master;
     let animate = app.ui.inspector_tab == "animate";
-    let items = [
-        (Icon::Grid, "Grid", if sorter { "Back to one slide at a time" } else { "See all the slides in a grid" }, sorter),
-        (Icon::SlideMaster, "Masters", if in_master { "Close the slide masters" } else { "Edit the slide masters and layouts" }, in_master),
-        (Icon::States, "Animate", "States and effects", animate),
-        (Icon::Play, "Play", "Present from this slide (⌘↩)", false),
-    ];
-    for (k, (icon, label, tip, on)) in items.into_iter().enumerate() {
-        let cx = row.min.x + col * (k as f32 + 0.5);
-        let r = Rect::from_center_size(pos2(cx, row.min.y + tile / 2.0), vec2(tile, tile));
-        let resp =
-            ui.interact(r.union(Rect::from_center_size(pos2(cx, r.max.y + 12.0), vec2(col, 20.0))), ui.id().with(("panel-tile", k)), Sense::click());
-        let p = ui.painter();
-        let fill = if on {
-            t.selected
-        } else if resp.hovered() {
-            t.hover
-        } else {
-            t.card
-        };
-        p.rect(r, CornerRadius::same(10), fill, Stroke::new(1.0, if on { t.text_faint } else { t.border }), egui::StrokeKind::Inside);
-        icons::paint_mono(p, r.shrink(13.0), icon, if on { t.text } else { t.text_dim }, false);
-        p.text(pos2(cx, r.max.y + 12.0), Align2::CENTER_CENTER, label, theme::font(12.5), t.text);
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
-        if resp.on_hover_text(tip).clicked() {
-            match k {
-                0 => {
-                    if in_master {
-                        let _ = app.run("view.closeMaster", json!({}));
-                    }
-                    let _ = app.run(if sorter { "view.normal" } else { "view.sorter" }, json!({}));
-                }
-                1 => {
-                    let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({}));
-                }
-                2 => app.ui.inspector_tab = if animate { "design".into() } else { "animate".into() },
-                _ => {
-                    let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
-                    app.start_show(from, false);
-                }
-            }
+    if view_toggle(ui, Icon::Grid, "Grid", if sorter { "Back to one slide at a time" } else { "All the slides in a grid" }, sorter).clicked() {
+        if in_master {
+            let _ = app.run("view.closeMaster", json!({}));
         }
+        let _ = app.run(if sorter { "view.normal" } else { "view.sorter" }, json!({}));
+    }
+    if view_toggle(
+        ui,
+        Icon::SlideMaster,
+        "Masters",
+        if in_master { "Close the slide masters" } else { "Edit the slide masters and layouts" },
+        in_master,
+    )
+    .clicked()
+    {
+        let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({}));
+    }
+    if view_toggle(ui, Icon::States, "Animate", "States and effects", animate).clicked() {
+        app.ui.inspector_tab = if animate { "design".into() } else { "animate".into() };
+    }
+    if view_toggle(ui, Icon::Play, "Play", "Present from this slide (⌘↩)", false).clicked() {
+        let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
+        app.start_show(from, false);
     }
 }
 
@@ -428,15 +404,16 @@ fn states_strip(app: &mut SlideApp, ui: &mut Ui) {
 
 /// One tool button in the floating toolbar: the current tool is filled with the accent.
 fn tool(ui: &mut Ui, icon: Icon, tip: &str, on: bool, enabled: bool) -> egui::Response {
-    tool_button(ui, icon, tip, on, enabled, true)
+    tool_button(ui, icon, tip, tip, on, enabled, true)
 }
 
-/// A view toggle in the toolbar: shown on in grey, so it isn't mistaken for the current tool.
-fn toggle(ui: &mut Ui, icon: Icon, tip: &str, on: bool) -> egui::Response {
-    tool_button(ui, icon, tip, on, true, false)
+/// A view toggle named `label` (for screen readers and tests), with a longer tooltip: shown on
+/// in grey, so it isn't mistaken for the current tool.
+fn view_toggle(ui: &mut Ui, icon: Icon, label: &str, tip: &str, on: bool) -> egui::Response {
+    tool_button(ui, icon, label, tip, on, true, false)
 }
 
-fn tool_button(ui: &mut Ui, icon: Icon, tip: &str, on: bool, enabled: bool, accent: bool) -> egui::Response {
+fn tool_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, on: bool, enabled: bool, accent: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(36.0, 36.0), if enabled { Sense::click() } else { Sense::hover() });
     let p = ui.painter_at(r);
@@ -449,7 +426,7 @@ fn tool_button(ui: &mut Ui, icon: Icon, tip: &str, on: bool, enabled: bool, acce
         p.rect_filled(r, CornerRadius::same(8), t.hover);
     }
     icons::paint(&p, r.shrink(9.0), icon, if filled { t.accent_text } else { t.text }, !enabled);
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, tip));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, on, label));
     resp.on_hover_text(tip)
 }
 
@@ -458,7 +435,7 @@ fn toolbar(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("canvas_toolbar").exact_size(TOOLBAR_H).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |ui| {
         let area = ui.max_rect();
-        let w = 7.0 * 38.0 + 1.0 + 3.0 * 38.0 + 9.0 + 50.0 + 16.0;
+        let w = 7.0 * 38.0 + 9.0 + 4.0 * 38.0 + 9.0 + 50.0 + 16.0;
         let bar = Rect::from_center_size(pos2(area.center().x, area.center().y - 4.0), vec2(w, 48.0));
         let shadow = egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: t.shadow };
         ui.painter().add(shadow.as_shape(bar, CornerRadius::same(12)));
@@ -499,16 +476,7 @@ fn toolbar(app: &mut SlideApp, ui: &mut Ui) {
         }
         let sep = ui.allocate_exact_size(vec2(9.0, 28.0), Sense::hover()).0;
         ui.painter().vline(sep.center().x, sep.y_range(), Stroke::new(1.0, t.separator));
-        if toggle(ui, Icon::NotesSmall, "Presenter notes", app.ui.notes).clicked() {
-            let _ = app.run("view.notes", json!({}));
-        }
-        // The strip always shows while the slide has states; this keeps it open without.
-        if toggle(ui, Icon::States, "States under the slide", crate::states::strip_shown(app)).clicked() {
-            app.ui.states_strip = !crate::states::strip_shown(app);
-        }
-        if toggle(ui, Icon::Search, "Search commands (⇧⌘P)", false).clicked() {
-            app.palette = Some((String::new(), 0));
-        }
+        view_toggles(app, ui);
         let sep = ui.allocate_exact_size(vec2(9.0, 28.0), Sense::hover()).0;
         ui.painter().vline(sep.center().x, sep.y_range(), Stroke::new(1.0, t.separator));
         zoom_menu(app, ui);
