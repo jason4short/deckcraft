@@ -47,7 +47,11 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                     notes_card(app, ui);
                 }
                 states_strip(app, ui);
-                crate::canvas::show(app, ui);
+                if app.previewing() {
+                    crate::show::ui(app, ui);
+                } else {
+                    crate::canvas::show(app, ui);
+                }
             }
         }
         hidden_panel_buttons(app, ui);

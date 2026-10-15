@@ -721,6 +721,25 @@ impl SlideApp {
         Ok(Value::Null)
     }
 
+    /// Preview slides `from..=to` in the editor's canvas (not full screen): their animations and
+    /// transitions play by themselves, then editing carries on. Esc or a click stops it early.
+    pub fn preview_inline(&mut self, from: usize, to: usize) {
+        self.media.stop_owned(media::Owner::Editor);
+        if let Some(d) = self.session.active() {
+            let mut s = show::Show::new(&d.doc, from, false, false);
+            s.inline = true;
+            s.preview_only = true;
+            s.autoplay = true;
+            s.stop_after = Some(to.max(from));
+            self.show = Some(s);
+        }
+    }
+
+    /// Is a preview playing in the canvas?
+    pub fn previewing(&self) -> bool {
+        self.show.as_ref().is_some_and(|s| s.inline)
+    }
+
     pub fn start_show(&mut self, from: usize, reading: bool) {
         self.media.stop_owned(media::Owner::Editor);
         if let Some(d) = self.session.active() {
@@ -1020,6 +1039,10 @@ impl SlideApp {
         // Tracked before the early returns so a paste into a text field isn't repeated later.
         let textless_paste = self.paste_key.textless_paste(&events);
         self.track_slides_focus(ctx);
+        // The preview playing in the canvas has the keys (→, Esc).
+        if self.show.is_some() {
+            return;
+        }
         if ctx.memory(|m| m.focused().is_some()) || self.dialog.as_ref().is_some_and(|d| d.modal()) || self.palette.is_some() {
             return;
         }
@@ -1226,7 +1249,8 @@ impl SlideApp {
         let t0 = now_ms();
         let t = theme::Tokens::get(&ctx);
         self.tick_media(&ctx);
-        if self.show.is_some() {
+        // A full slide show takes the window; an inline preview plays in the canvas.
+        if self.show.as_ref().is_some_and(|s| !s.inline) {
             show::ui(self, ui);
             self.perf.frame_ms = now_ms() - t0;
             return;
@@ -1278,7 +1302,11 @@ impl SlideApp {
                         if self.ui.notes {
                             status::notes_pane(self, ui);
                         }
-                        canvas::show(self, ui);
+                        if self.previewing() {
+                            show::ui(self, ui);
+                        } else {
+                            canvas::show(self, ui);
+                        }
                     });
                 }
             }

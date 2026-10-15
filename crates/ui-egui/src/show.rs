@@ -19,6 +19,10 @@ pub struct Show {
     pub preview_only: bool,
     /// Play every step automatically (animation preview).
     pub autoplay: bool,
+    /// Playing in the editor's canvas (a preview): no full screen, no presenter window.
+    pub inline: bool,
+    /// A preview runs on through the slides up to this one (a slide's states), then ends.
+    pub stop_after: Option<usize>,
     pub rehearse: bool,
     timeline: Option<(usize, Timeline)>,
     step_start: f64,
@@ -81,6 +85,8 @@ impl Show {
             presenter,
             preview_only: false,
             autoplay: false,
+            inline: false,
+            stop_after: None,
             rehearse: false,
             timeline: None,
             step_start: 0.0,
@@ -153,7 +159,7 @@ impl Show {
                 self.step_start = now;
                 self.step_end = now;
                 self.strokes.clear();
-                if self.preview_only {
+                if self.preview_only && self.stop_after.is_none_or(|last| i > last) {
                     return false;
                 }
                 self.after_enter(doc, now);
@@ -254,13 +260,15 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
     };
     let now = ctx.input(|i| i.time);
     let Some(mut show) = app.show.take() else { return };
+    // The click or key that started a preview in the canvas is still in this frame's input.
+    let fresh = !show.started;
     if !show.started {
         show.started = true;
         show.slide_start = now;
         show.step_start = now;
         show.show_start = now;
         show.last_move = now;
-        if !show.reading {
+        if !show.reading && !show.inline {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
         }
         show.after_enter(&doc, now);
@@ -275,6 +283,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
             .collect();
         (keys, i.pointer.primary_clicked(), i.pointer.secondary_clicked(), i.pointer.delta().length() > 0.0)
     });
+    let (keys, clicked, secondary) = if fresh && show.inline { (vec![], false, false) } else { (keys, clicked, secondary) };
     if moved {
         show.last_move = now;
     }
@@ -370,7 +379,12 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         if step_due || (!show.rehearse && show.state.auto_advance_due(&doc, idle) && !show.ended) {
             actions.push(show.state.next(&doc));
         } else if show.preview_only && cur_step >= n_steps && idle > 0.8 {
-            keep = false;
+            // A preview runs on to the slides it covers (a slide's states), then ends.
+            if show.stop_after.is_some_and(|last| show.state.slide < last) {
+                actions.push(show.state.next(&doc));
+            } else {
+                keep = false;
+            }
         }
     }
     for a in actions {
@@ -586,7 +600,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
     } else if link.is_some() {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-    } else if now - show.last_move > 2.5 && !show.reading {
+    } else if now - show.last_move > 2.5 && !show.reading && !show.inline {
         ctx.set_cursor_icon(egui::CursorIcon::None);
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
@@ -666,14 +680,14 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
     }
     // Presenter view in a second window.
-    if show.presenter && !show.reading && !show.ended {
+    if show.presenter && !show.reading && !show.inline && !show.ended {
         presenter_window(&ctx, &mut show, &doc, now, &mut keep);
     }
     if keep {
         app.show = Some(show);
     } else {
         app.media.stop_owned(crate::media::Owner::Show);
-        if !show.reading {
+        if !show.reading && !show.inline {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         }
         if show.rehearse {

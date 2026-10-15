@@ -252,3 +252,30 @@ fn a_text_build_counts_a_click_per_paragraph() {
     h.run_steps(3);
     assert_eq!(build_steps(&doc(h.state()).slides[0]), 0);
 }
+
+#[test]
+fn preview_plays_the_states_in_the_canvas_and_ends_by_itself() {
+    let (mut app, _) = app_with_box();
+    add_state(&mut app);
+    app.run("slide.new", json!({})).unwrap();
+    app.run("slide.go", json!({"index": 0})).unwrap();
+    app.ui.inspector_tab = "animate".into();
+    let mut h = canvas(app);
+    h.get_by_label("▶ Preview").click();
+    h.run_steps(3);
+    assert!(h.state().previewing(), "playing in the canvas");
+    assert!(h.query_by_label("Grid").is_some() && h.query_by_label("Layers").is_some(), "the editor stays around it");
+    // It plays on into the second state, then stops before the next slide.
+    let mut seen = vec![];
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        h.run_steps(1);
+        match h.state().show.as_ref() {
+            Some(s) => seen.push(s.state.slide),
+            None => break,
+        }
+    }
+    assert!(h.state().show.is_none(), "the preview ended by itself");
+    assert!(seen.contains(&1), "it reached the second state: {seen:?}");
+    assert!(!seen.contains(&2), "and stopped before the next slide: {seen:?}");
+}

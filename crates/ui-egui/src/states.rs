@@ -188,8 +188,9 @@ pub fn animate(app: &mut SlideApp, ui: &mut Ui) {
         {
             add_state(app);
         }
-        if run.len() > 1 && ui.add(egui::Button::new("▶ Play").stroke(Stroke::new(1.0, t.border))).on_hover_text("Present the states").clicked() {
-            app.start_show(run.start, false);
+        let tip = if run.len() > 1 { "Play the states here, in the canvas" } else { "Play this slide's animations here, in the canvas" };
+        if ui.add(egui::Button::new("▶ Preview").stroke(Stroke::new(1.0, t.border))).on_hover_text(tip).clicked() {
+            app.preview_inline(run.start, run.end.saturating_sub(1));
         }
     });
     if is_state_step(&doc, cur) {

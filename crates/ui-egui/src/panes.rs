@@ -476,11 +476,7 @@ pub(crate) fn animation(app: &mut SlideApp, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if ui.button("▶ Play All").clicked() {
             let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
-            app.start_show(from, true);
-            if let Some(s) = app.show.as_mut() {
-                s.preview_only = true;
-                s.autoplay = true;
-            }
+            app.preview_inline(from, from);
         }
     });
     ui.separator();
