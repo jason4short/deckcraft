@@ -267,23 +267,51 @@ pub fn delete_state(app: &mut SlideApp, i: usize) {
 /// Swap state `i` with the one before it (or after it, `forth`). The run keeps its first slide's
 /// transition at its start and Morph after it.
 pub fn move_state(app: &mut SlideApp, i: usize, forth: bool) {
+    let to = if forth { i + 1 } else { i.saturating_sub(1) };
+    if to != i {
+        move_state_to(app, i, to);
+    }
+}
+
+/// Move state `i` to position `to` of its run (counted after taking it out, as `slide.move`
+/// does). Whichever state ends up first takes the run's own transition, and the one that was
+/// first is reached with Morph, so the run doesn't join the slide before it. One undo step.
+pub fn move_state_to(app: &mut SlideApp, i: usize, to: usize) {
     let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
     let run = run_of(&doc, i);
-    let j = if forth { i + 1 } else { i.wrapping_sub(1) };
-    if !run.contains(&i) || !run.contains(&j) {
+    let s = run.start;
+    let to = to.clamp(s, run.end.saturating_sub(1));
+    if !run.contains(&i) || to == i {
         return;
     }
-    let mut cmds = vec![("slide.move", json!({"from": i, "to": j}))];
-    let s = run.start;
-    if i == s || j == s {
-        // The state that becomes first takes the run's transition; the old first one is reached
-        // with the Morph that state had.
+    let mut cmds = vec![("slide.move", json!({"from": i, "to": to}))];
+    // Where the old first state lands, when the first place changes hands.
+    let old_head_at = if i == s {
+        Some(to)
+    } else if to == s {
+        Some(s + 1)
+    } else {
+        None
+    };
+    if let Some(at) = old_head_at {
         let head = doc.slides.get(s).and_then(|x| x.transition.as_ref());
         cmds.push(("transition.set", head_transition(head, s)));
-        cmds.push(("transition.set", json!({"kind": "morph", "duration": morph_ms(&doc, s + 1), "index": s + 1})));
+        cmds.push(("transition.set", json!({"kind": "morph", "duration": morph_ms(&doc, s + 1), "index": at})));
     }
     app.run_as_one("Move State", cmds);
-    let _ = app.run("slide.go", json!({"index": j}));
+    let _ = app.run("slide.go", json!({"index": to}));
+}
+
+/// Where a state dragged from `from` drops among thumbnails `rects` (left to right, the run's
+/// order) for pointer x `x`: the gap nearest it, as `(the move's target, the gap's x)`.
+pub fn drop_at(rects: &[Rect], from: usize, x: f32) -> Option<(usize, f32)> {
+    let first = rects.first()?;
+    let mut gaps: Vec<f32> = vec![first.min.x - 3.0];
+    gaps.extend(rects.iter().map(|r| r.max.x + 3.0));
+    let (g, gx) = gaps.iter().copied().enumerate().min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))?;
+    // Gap g is before thumbnail g; past the dragged one, everything shifts left by one.
+    let to = if g > from { g - 1 } else { g };
+    Some((to, gx))
 }
 
 // ----- The strip under the slide -------------------------------------------------------------
@@ -317,11 +345,17 @@ pub fn strip_bar(app: &mut SlideApp, ui: &mut Ui) {
             ui.spacing_mut().item_spacing.x = 6.0;
             let (lr, _) = ui.allocate_exact_size(vec2(44.0, th), Sense::hover());
             ui.painter().text(pos2(lr.min.x, lr.center().y), Align2::LEFT_CENTER, "States", theme::bold(12.0), t.text_dim);
+            let drag_id = egui::Id::new("states-strip-drag");
+            let mut thumbs: Vec<Rect> = vec![];
             for (k, i) in run.clone().enumerate() {
                 if k > 0 {
                     timing_chip(app, ui, &doc, i, k);
                 }
-                let (r, resp) = ui.allocate_exact_size(vec2(tw, th), Sense::click());
+                let (r, resp) = ui.allocate_exact_size(vec2(tw, th), Sense::click_and_drag());
+                thumbs.push(r);
+                if resp.drag_started() {
+                    ui.ctx().data_mut(|d| d.insert_temp(drag_id, k));
+                }
                 match app.textures.thumb(ui.ctx(), &doc, i, (tw * ppp).round() as u32, &mut budget) {
                     Some(tex) => {
                         ui.painter().image(tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
@@ -380,6 +414,25 @@ pub fn strip_bar(app: &mut SlideApp, ui: &mut Ui) {
                 presp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &plus));
                 if presp.on_hover_text(&plus).clicked() {
                     add_state_after(app, i);
+                }
+            }
+            // Dragging a state: a line where it would go; letting go moves it there.
+            if let Some(from) = ui.ctx().data(|d| d.get_temp::<usize>(drag_id)) {
+                let (pointer, released) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.any_released() || !i.pointer.any_down()));
+                let target = pointer.and_then(|p| drop_at(&thumbs, from, p.x));
+                if let (Some((to, x)), Some(r)) = (target, thumbs.first()) {
+                    if to != from {
+                        ui.painter().vline(x, r.y_range().expand(4.0), Stroke::new(2.0, t.accent));
+                    }
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
+                if released {
+                    ui.ctx().data_mut(|d| d.remove::<usize>(drag_id));
+                    if let Some((to, _)) = target
+                        && to != from
+                    {
+                        move_state_to(app, run.start + from, run.start + to);
+                    }
                 }
             }
         });

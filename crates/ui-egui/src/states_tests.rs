@@ -279,3 +279,32 @@ fn preview_plays_the_states_in_the_canvas_and_ends_by_itself() {
     assert!(seen.contains(&1), "it reached the second state: {seen:?}");
     assert!(!seen.contains(&2), "and stopped before the next slide: {seen:?}");
 }
+
+#[test]
+fn a_dragged_state_drops_at_the_nearest_gap() {
+    let r = |x: f32| egui::Rect::from_min_size(egui::pos2(x, 0.0), egui::vec2(80.0, 50.0));
+    let rects = [r(0.0), r(100.0), r(200.0), r(300.0)];
+    // Dragging the first to past the third: it goes third (after taking it out).
+    assert_eq!(drop_at(&rects, 0, 290.0).map(|d| d.0), Some(2));
+    // Dragging the last to the front.
+    assert_eq!(drop_at(&rects, 3, -5.0).map(|d| d.0), Some(0));
+    // Back where it was.
+    assert_eq!(drop_at(&rects, 1, 95.0).map(|d| d.0), Some(1));
+}
+
+#[test]
+fn moving_the_first_state_to_the_end_keeps_the_run_together() {
+    let (mut app, _) = app_with_box();
+    app.run("transition.set", json!({"kind": "fade"})).unwrap();
+    add_state(&mut app);
+    add_state(&mut app);
+    let first = doc(&app).slides[0].id;
+    move_state_to(&mut app, 0, 2);
+    let d = doc(&app);
+    assert_eq!(d.slides[2].id, first, "the first state is last now");
+    assert_eq!(d.slides[0].transition.as_ref().unwrap().kind, "fade", "the run starts with its own transition");
+    assert!(is_state_step(&d, 1) && is_state_step(&d, 2), "the rest are reached with Morph");
+    assert_eq!(run_of(&d, 0), 0..3);
+    app.run("edit.undo", json!({})).unwrap();
+    assert_eq!(doc(&app).slides[0].id, first, "one undo step");
+}
