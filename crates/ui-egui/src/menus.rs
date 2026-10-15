@@ -75,8 +75,9 @@ pub fn ui_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
             app.dialog = Some(crate::dialogs::Dialog::new("hyperlink"));
             return true;
         }
+        // ⌘F: find text in the presentation (the command palette is ⇧⌘P).
         (F, true, false, false) => {
-            app.palette = Some((String::new(), 0));
+            crate::find::open(app);
             return true;
         }
         _ => return false,

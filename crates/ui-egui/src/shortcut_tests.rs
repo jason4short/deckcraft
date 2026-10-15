@@ -319,3 +319,27 @@ fn command_l_toggles_the_lock_and_shift_command_l_unlocks_everything_in_the_canv
     press(&mut h, Key::L, CMD | Modifiers::SHIFT);
     assert!(!locked(&h, ids[0]) && !locked(&h, ids[1]), "⇧⌘L unlocks every layer, nothing selected");
 }
+
+#[test]
+fn command_f_finds_words_on_the_slides() {
+    let (mut h, _) = harness();
+    let app = h.state_mut();
+    app.run("insert.textBox", json!({"rect": [50, 300, 300, 50], "text": "Quarterly plan"})).unwrap();
+    app.run("slide.new", json!({})).unwrap();
+    app.run("insert.textBox", json!({"rect": [50, 300, 300, 50], "text": "The plan, and a plan B"})).unwrap();
+    app.run("slide.go", json!({"index": 0})).unwrap();
+    h.run_steps(2);
+    press(&mut h, Key::F, CMD);
+    assert!(h.state().find.is_some(), "⌘F opens the find bar");
+    h.event(egui::Event::Text("plan".into()));
+    h.run_steps(3);
+    let bar = h.state().find.as_ref().unwrap();
+    assert_eq!(bar.matches.len(), 3);
+    let sel = |h: &Harness<'static, SlideApp>| h.state().session.active().unwrap().selection.clone();
+    assert_eq!(sel(&h).slide, 0, "the first match is shown");
+    assert!(sel(&h).text.is_some(), "its words selected");
+    press(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(sel(&h).slide, 1, "Enter goes to the next");
+    press(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(h.state().find.is_none(), "Esc closes it");
+}

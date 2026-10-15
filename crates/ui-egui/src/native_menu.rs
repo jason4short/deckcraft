@@ -315,7 +315,7 @@ fn definition() -> Vec<(&'static str, MenuRole, Vec<Row>)> {
                 Cmd("edit.selectAll", "Select All"),
                 Cmd("edit.deselect", "Deselect"),
                 Sep,
-                Cmd("app.find", "Find Command…"),
+                Cmd("app.find", "Find…"),
             ],
         ),
         (
@@ -495,7 +495,7 @@ pub fn invoke(app: &mut SlideApp, ctx: &egui::Context, id: &str) {
         QUIT => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         MINIMIZE => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
         HIDE => {}
-        "app.find" => app.palette = Some((String::new(), 0)),
+        "app.find" => crate::find::open(app),
         "app.paragraphDialog" => app.dialog = Some(crate::dialogs::Dialog::new("paragraph")),
         "app.lockToggle" | "app.unlockAll" => {
             let shift = id == "app.unlockAll";
