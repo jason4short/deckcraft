@@ -169,10 +169,12 @@ fn the_strip_adds_states_after_any_state() {
     assert_eq!(run_of(&d, 0), 0..3);
     assert_eq!(h.state().session.active().unwrap().selection.slide, 1, "the new state went in after the first");
     assert!(h.query_by_label("Morph into state 2").is_some(), "timing between states");
-    h.state_mut().ui.states_strip = false;
-    h.state_mut().ui.inspector_tab = "design".into();
+    h.get_by_label("Design").click();
     h.run_steps(2);
-    assert!(h.query_by_label("State 3").is_some(), "the strip stays while there are states");
+    assert!(h.query_by_label("State 3").is_none(), "the strip is Animate's only, even with states");
+    h.get_by_label("Animate").click();
+    h.run_steps(2);
+    assert!(h.query_by_label("State 3").is_some(), "back with Animate");
 }
 
 #[test]

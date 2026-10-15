@@ -332,12 +332,10 @@ pub fn drop_at(rects: &[Rect], from: usize, x: f32) -> Option<(usize, f32)> {
 /// Height of the strip's thumbnails.
 pub const STRIP_THUMB_H: f32 = 54.0;
 
-/// Should the strip show: the slide has states, or the Animate panel is open (or it was turned on).
+/// Should the strip show: only while the Animate panel is open (states are animation).
 pub fn strip_shown(app: &SlideApp) -> bool {
     let Some(st) = app.session.active() else { return false };
-    st.selection.target == deckcraft_engine::Target::Slides
-        && !st.doc.slides.is_empty()
-        && (app.ui.states_strip || app.ui.inspector_tab == "animate" || run_of(&st.doc, st.selection.slide).len() > 1)
+    st.selection.target == deckcraft_engine::Target::Slides && !st.doc.slides.is_empty() && app.ui.inspector_tab == "animate"
 }
 
 /// The current slide's states in a row under the slide (canvas shell): click one to edit it, + after

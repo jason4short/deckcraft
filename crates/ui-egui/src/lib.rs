@@ -178,9 +178,6 @@ pub struct UiState {
     /// Format Shape pane: tab (`fill`, `effects`, `size`, `picture`, `text`).
     pub format_tab: String,
     pub grayscale: bool,
-    /// Canvas shell: the strip of the current slide's states under the slide, shown even when it
-    /// has none yet (it always shows while it has some).
-    pub states_strip: bool,
     /// Canvas shell: the left panel (slides and layers) and the right panel (design) are hidden.
     pub hide_left: bool,
     pub hide_right: bool,
@@ -210,7 +207,6 @@ impl Default for UiState {
             presenter_view: true,
             ui_scale: 1.0,
             format_tab: "fill".into(),
-            states_strip: false,
             hide_left: false,
             hide_right: false,
             grayscale: false,
