@@ -260,6 +260,14 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
     };
     let now = ctx.input(|i| i.time);
     let Some(mut show) = app.show.take() else { return };
+    // The show has the keyboard: a control the editor left focused (a slide or layer row, a
+    // field) would take the arrow keys to move focus, and → wouldn't reach the slides until the
+    // show was clicked.
+    ctx.memory_mut(|m| {
+        if let Some(id) = m.focused() {
+            m.surrender_focus(id);
+        }
+    });
     // The click or key that started a preview in the canvas is still in this frame's input.
     let fresh = !show.started;
     if !show.started {
@@ -983,6 +991,25 @@ mod tests {
         // The test clip is a few frames long: started is what counts.
         assert!(h.state().media.status(id).is_some(), "→ played the video");
         assert_eq!(h.state().show.as_ref().map(|s| s.state.slide), Some(0), "and stayed on its slide");
+    }
+
+    #[test]
+    fn arrow_keys_reach_the_show_while_an_editor_control_has_focus() {
+        let mut app = crate::SlideApp::new(deckcraft_engine::Session::with_new(), crate::Services::default());
+        app.run("slide.new", json!({})).unwrap();
+        app.run("slide.go", json!({"index": 0})).unwrap();
+        let mut h = harness(app);
+        // Something in the editor (a slide row, a field) has the keyboard.
+        h.ctx.memory_mut(|m| m.request_focus(egui::Id::new("an editor control")));
+        h.run_steps(2);
+        h.state_mut().start_show(0, false);
+        h.run_steps(4);
+        assert!(h.ctx.memory(|m| m.focused()).is_none(), "the show took the keyboard");
+        for pressed in [true, false] {
+            h.event(egui::Event::Key { key: egui::Key::ArrowRight, physical_key: None, pressed, repeat: false, modifiers: Default::default() });
+        }
+        h.run_steps(4);
+        assert_eq!(h.state().show.as_ref().map(|s| s.state.slide), Some(1), "→ moved on without a click first");
     }
 
     #[test]

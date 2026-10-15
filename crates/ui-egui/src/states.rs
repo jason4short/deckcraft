@@ -188,9 +188,14 @@ pub fn animate(app: &mut SlideApp, ui: &mut Ui) {
         {
             add_state(app);
         }
-        let tip = if run.len() > 1 { "Play the states here, in the canvas" } else { "Play this slide's animations here, in the canvas" };
+        let tip = if run.len() > 1 {
+            "Play from the selected state to the last, here in the canvas"
+        } else {
+            "Play this slide's animations here, in the canvas"
+        };
         if ui.add(egui::Button::new("▶ Preview").stroke(Stroke::new(1.0, t.border))).on_hover_text(tip).clicked() {
-            app.preview_inline(run.start, run.end.saturating_sub(1));
+            let (from, to) = preview_range(&doc, cur);
+            app.preview_inline(from, to);
         }
     });
     if is_state_step(&doc, cur) {
@@ -220,6 +225,14 @@ fn section(ui: &mut Ui, title: &str) {
 }
 
 /// Duplicate the current slide as the next state: the copy enters with Morph.
+/// The slides Preview plays from slide `cur`: from the state being edited (not its run's first)
+/// to the run's last.
+pub fn preview_range(doc: &Presentation, cur: usize) -> (usize, usize) {
+    let run = run_of(doc, cur);
+    let last = run.end.saturating_sub(1).max(run.start);
+    (cur.clamp(run.start, last), last)
+}
+
 pub fn add_state(app: &mut SlideApp) {
     let duration =
         app.session.active().and_then(|d| d.current_slide().and_then(|s| s.transition.clone())).filter(|t| t.kind == "morph").map(|t| t.duration_ms);

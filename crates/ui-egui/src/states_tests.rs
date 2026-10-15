@@ -281,6 +281,25 @@ fn preview_plays_the_states_in_the_canvas_and_ends_by_itself() {
 }
 
 #[test]
+fn preview_starts_from_the_selected_state() {
+    let (mut app, _) = app_with_box();
+    add_state(&mut app);
+    add_state(&mut app);
+    app.run("slide.new", json!({})).unwrap();
+    let d = doc(&app);
+    assert_eq!(preview_range(&d, 1), (1, 2), "from the second state, the one selected, to the last");
+    assert_eq!(preview_range(&d, 0), (0, 2));
+    assert_eq!(preview_range(&d, 3), (3, 3), "a slide without states plays only itself");
+    // The button plays that range.
+    app.run("slide.go", json!({"index": 1})).unwrap();
+    app.ui.inspector_tab = "animate".into();
+    let mut h = canvas(app);
+    h.get_by_label("▶ Preview").click();
+    h.run_steps(1);
+    assert_eq!(h.state().show.as_ref().and_then(|s| s.stop_after), Some(2));
+}
+
+#[test]
 fn a_dragged_state_drops_at_the_nearest_gap() {
     let r = |x: f32| egui::Rect::from_min_size(egui::pos2(x, 0.0), egui::vec2(80.0, 50.0));
     let rects = [r(0.0), r(100.0), r(200.0), r(300.0)];
