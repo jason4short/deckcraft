@@ -270,3 +270,13 @@ fn command_period_hides_the_side_panels_and_buttons_bring_them_back() {
     h.run_steps(3);
     assert!(h.state().ui.hide_left, "the sidebar's own button hides it");
 }
+
+#[test]
+fn layers_list_the_master_and_layouts_too() {
+    let mut h = harness(Shell::Canvas);
+    h.state_mut().run("view.slideMaster", json!({"master": 0, "layout": null})).unwrap();
+    h.run_steps(3);
+    assert!(h.query_by_label("Layers").is_some(), "the Layers list shows in Slide Master view");
+    let first = h.state().session.active().unwrap().doc.masters[0].shapes.first().map(|s| s.name.clone()).unwrap();
+    assert!(h.query_all_by_label(&first).next().is_some(), "the master's own layers: {first}");
+}

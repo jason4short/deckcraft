@@ -105,9 +105,8 @@ fn sidebar(app: &mut SlideApp, ui: &mut Ui) {
             }
             ui.add_space(6.0);
             ui.painter().hline(ui.max_rect().x_range(), ui.cursor().min.y, Stroke::new(1.0, t.separator));
-            if !in_master {
-                layers(app, ui);
-            }
+            // Layers for whatever is being edited: the slide, or a layout or the master.
+            layers(app, ui);
             if in_master {
                 crate::thumbs::master_list(app, ui);
                 return;
@@ -306,9 +305,16 @@ fn layers(app: &mut SlideApp, ui: &mut Ui) {
             ui.add_space(4.0);
             egui::ScrollArea::vertical().id_salt("canvas_layers_list").auto_shrink([false, false]).show(ui, |ui| {
                 if app.session.active().is_some_and(|d| d.shapes().is_empty()) {
-                    ui.label(egui::RichText::new("Nothing on this slide yet").font(theme::font(12.0)).color(t.text_faint));
+                    let what = match app.session.active().map(|d| d.selection.target) {
+                        Some(Target::Master { .. }) => "Nothing on the master yet",
+                        Some(Target::Layout { .. }) => "Nothing on this layout yet",
+                        _ => "Nothing on this slide yet",
+                    };
+                    ui.label(egui::RichText::new(what).font(theme::font(12.0)).color(t.text_faint));
                 } else {
-                    let marked = crate::states::changed_layers(app);
+                    // Layers changed from the previous state (slides only).
+                    let on_slide = app.session.active().is_some_and(|d| d.selection.target == Target::Slides);
+                    let marked = if on_slide { crate::states::changed_layers(app) } else { Default::default() };
                     crate::selpane::list_marked(app, ui, &marked);
                 }
             });
