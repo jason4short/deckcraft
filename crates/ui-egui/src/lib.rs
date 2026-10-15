@@ -318,6 +318,12 @@ pub struct SlideApp {
     pub slides_focus: bool,
     /// Where the slide list was drawn last frame, so a click there keeps its focus.
     pub thumbs_rect: Option<egui::Rect>,
+    /// The states strip has the keyboard (a state was clicked last): ← / → walk the states,
+    /// ⌘← / ⌘→ move one, ⌘D adds one after it, Delete removes it (see `states::strip_key`). A click
+    /// anywhere else, or Esc, gives it back.
+    pub states_focus: bool,
+    /// Where the states strip was drawn last frame, so a click there keeps its focus.
+    pub strip_rect: Option<egui::Rect>,
     /// The slide a ⇧-extended range starts from, and the one it reaches.
     pub slide_anchor: Option<usize>,
     pub slide_cursor: Option<usize>,
@@ -372,6 +378,8 @@ impl SlideApp {
             detached: Default::default(),
             slides_focus: false,
             thumbs_rect: None,
+            states_focus: false,
+            strip_rect: None,
             slide_anchor: None,
             slide_cursor: None,
             last_time: 0.0,
@@ -1122,6 +1130,9 @@ impl SlideApp {
                 }
                 egui::Event::Key { key, pressed: true, modifiers, .. } => {
                     let mods = Mods { shift: modifiers.shift, alt: modifiers.alt, cmd: modifiers.command || modifiers.ctrl };
+                    if self.states_focus && states::strip_key(self, key, mods) {
+                        continue;
+                    }
                     if slides_keys && thumbs::slide_key(self, key, mods) {
                         continue;
                     }
@@ -1160,6 +1171,11 @@ impl SlideApp {
         let editing = self.session.active().is_none_or(|d| !d.selection.shapes.is_empty() || d.selection.text.is_some());
         if elsewhere || editing {
             self.slides_focus = false;
+        }
+        let off_strip =
+            ctx.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p| !self.strip_rect.is_some_and(|r| r.contains(p))));
+        if off_strip || editing || !states::strip_shown(self) {
+            self.states_focus = false;
         }
     }
 
@@ -1259,8 +1275,9 @@ impl SlideApp {
         }
         self.sync_backstage();
         self.keyboard(&ctx);
-        // Drawn again below when the slide list is shown.
+        // Drawn again below when the slide list (or the states strip) is shown.
         self.thumbs_rect = None;
+        self.strip_rect = None;
         self.sync_backstage();
         self.sync_shell_prefs();
         ribbon::title_bar(self, ui);

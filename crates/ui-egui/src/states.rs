@@ -351,6 +351,8 @@ pub fn strip_bar(app: &mut SlideApp, ui: &mut Ui) {
     let tw = th * (doc.slide_size.width / doc.slide_size.height.max(1.0)) as f32;
     let ppp = ui.ctx().pixels_per_point();
     let mut budget = 3u32;
+    app.strip_rect = Some(ui.max_rect());
+    let focused = app.states_focus;
     egui::ScrollArea::horizontal().id_salt("canvas_states_strip").auto_shrink([false, true]).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -377,7 +379,12 @@ pub fn strip_bar(app: &mut SlideApp, ui: &mut Ui) {
                     }
                 }
                 let on = i == cur;
-                let stroke = if on { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, if resp.hovered() { t.text_faint } else { t.border }) };
+                // Accent while the strip has the keyboard, grey when it doesn't (as the slide list).
+                let stroke = if on {
+                    Stroke::new(2.0, if focused { t.accent } else { t.text_faint })
+                } else {
+                    Stroke::new(1.0, if resp.hovered() { t.text_faint } else { t.border })
+                };
                 ui.painter().rect_stroke(r, CornerRadius::same(3), stroke, egui::StrokeKind::Outside);
                 // The state's number in a corner badge.
                 let badge = Rect::from_min_size(r.min + vec2(3.0, 3.0), vec2(16.0, 14.0));
@@ -392,6 +399,10 @@ pub fn strip_bar(app: &mut SlideApp, ui: &mut Ui) {
                 builds_ticks(ui, &doc, i, r, &t);
                 let label = format!("State {}", k + 1);
                 resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &label));
+                if resp.clicked() || resp.drag_started() {
+                    app.states_focus = true;
+                    app.slides_focus = false;
+                }
                 if resp.clicked() && !on {
                     let _ = app.run("slide.go", json!({"index": i}));
                 }
@@ -448,6 +459,39 @@ pub fn strip_bar(app: &mut SlideApp, ui: &mut Ui) {
             }
         });
     });
+}
+
+/// Keys for the states strip while it has the keyboard (`SlideApp::states_focus`): ← / → (or
+/// ↑ / ↓) go to the previous or next state, Home / End to the first or last, ⌘← / ⌘→ move the state
+/// one place, ⌘D adds a state after it, Delete removes it, Esc gives the keyboard back. True when
+/// consumed.
+pub fn strip_key(app: &mut SlideApp, key: egui::Key, m: deckcraft_engine::Mods) -> bool {
+    use egui::Key::*;
+    let Some(st) = app.session.active() else { return false };
+    let cur = st.selection.slide;
+    let run = run_of(&st.doc, cur);
+    let last = run.end.saturating_sub(1).max(run.start);
+    let back = matches!(key, ArrowLeft | ArrowUp);
+    let forth = matches!(key, ArrowRight | ArrowDown);
+    match (key, m.cmd, m.shift, m.alt) {
+        (Escape, false, false, false) => app.states_focus = false,
+        (_, false, false, false) if back || forth || matches!(key, Home | End) => {
+            let to = match key {
+                Home => run.start,
+                End => last,
+                _ if back => cur.saturating_sub(1).max(run.start),
+                _ => (cur + 1).min(last),
+            };
+            if to != cur {
+                let _ = app.run("slide.go", json!({"index": to}));
+            }
+        }
+        (_, true, false, false) if back || forth => move_state(app, cur, forth),
+        (D, true, false, false) => add_state(app),
+        (Delete | Backspace, false, false, false) => delete_state(app, cur),
+        _ => return false,
+    }
+    true
 }
 
 /// Between two states: how long Morph takes to the later one; click for its options.

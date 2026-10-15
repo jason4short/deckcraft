@@ -178,7 +178,13 @@ impl Show {
 
     /// On entering a slide: auto-play its first step when it begins With/After Previous.
     fn after_enter(&mut self, doc: &Presentation, now: f64) {
-        let auto = self.timeline(doc).step_is_auto(0);
+        let tl = self.timeline(doc);
+        let (auto, steps) = (tl.step_is_auto(0), tl.steps());
+        // A slide with no steps has nothing to start: `next` would leave it for the next slide
+        // at once, with no transition (a preview from a state skipped that state).
+        if self.state.step >= steps {
+            return;
+        }
         if auto || self.autoplay {
             let a = self.state.next(doc);
             if matches!(a, ShowAction::PlayStep(_)) {
@@ -559,7 +565,11 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
             }
         }
         if !drew {
-            show.trans = None;
+            // A preview holds each slide (a state) a moment after its transition has played, not
+            // from when it began: else the last state would end the preview as its Morph lands.
+            if show.trans.take().is_some() && show.preview_only {
+                show.step_end = now;
+            }
             if let Some(tex) = &tex {
                 painter.image(tex.id(), srect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
@@ -708,8 +718,12 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
             }
             app.set_status("Slide timings recorded.");
         }
-        let last = show.state.slide;
-        let _ = app.run("slide.go", json!({"index": last}));
+        // A full show leaves you on the slide it ended on; a preview in the canvas gives editing
+        // back where it was (the state it started from).
+        if !show.inline {
+            let last = show.state.slide;
+            let _ = app.run("slide.go", json!({"index": last}));
+        }
     }
 }
 
